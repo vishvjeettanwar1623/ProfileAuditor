@@ -87,26 +87,30 @@ async def start_verification(resume_id: str, verification_request: VerificationR
         "message": "Verification in progress"
     }
     
-    # Start verification in background
+    # Process verification synchronously for better compatibility with serverless
     try:
-        background_tasks.add_task(
-            process_verification,
+        await process_verification(
             resume_id=resume_id,
             resume_data=resume_data,
             github_username=verification_request.github_username,
             twitter_username=verification_request.twitter_username,
             linkedin_username=verification_request.linkedin_username
         )
-        print(f"Verification process started for resume ID: {resume_id}")
+        print(f"Verification process completed for resume ID: {resume_id}")
         
         return VerificationResponse(
             resume_id=resume_id,
-            status="processing",
-            message="Verification started"
+            status="completed",
+            message="Verification completed"
         )
     except Exception as e:
-        error_msg = f"Error starting verification process: {str(e)}"
+        error_msg = f"Error during verification process: {str(e)}"
         print(error_msg)
+        verification_storage[resume_id] = {
+            "resume_id": resume_id,
+            "status": "error",
+            "error": str(e)
+        }
         raise HTTPException(status_code=500, detail=error_msg)
 
 @router.get("/{resume_id}", response_model=VerificationResult)
@@ -127,7 +131,7 @@ async def get_verification(resume_id: str):
     
     return verification_data
 
-def process_verification(resume_id: str, resume_data: Dict[str, Any], github_username: Optional[str] = None, twitter_username: Optional[str] = None, linkedin_username: Optional[str] = None):
+async def process_verification(resume_id: str, resume_data: Dict[str, Any], github_username: Optional[str] = None, twitter_username: Optional[str] = None, linkedin_username: Optional[str] = None):
     """Process verification against external sources"""
     try:
         print(f"Starting verification process for resume_id: {resume_id}")
