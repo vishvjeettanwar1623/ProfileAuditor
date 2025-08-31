@@ -54,7 +54,21 @@ function UploadPage() {
       navigate(`/results/${resumeId}`);
     } catch (error) {
       console.error('Error uploading resume:', error);
-      setError(error.response?.data?.detail || 'Error uploading resume. Please try again.');
+      
+      // Provide detailed error messaging
+      let errorMessage = 'Error uploading resume. Please try again.';
+      
+      if (error.code === 'ERR_NETWORK') {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      } else if (error.response?.status === 400) {
+        errorMessage = error.response.data?.detail || 'Invalid file format. Please upload a PDF or DOCX file.';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Server error. Please try again in a few moments.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

@@ -762,48 +762,6 @@ function ResultsPage() {
               )}
             </div>
             
-            {/* Social Media Username Form - Only show for verification errors, not file type errors */}
-            {error !== "This is not a resume" && (
-              <div className="mt-6 bg-gray-50 p-4 rounded-md">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Provide your social media usernames to improve verification:</h4>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div>
-                    <label htmlFor="github_username" className="block text-xs font-medium text-gray-700">GitHub Username</label>
-                    <input
-                      type="text"
-                      id="github_username"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                      placeholder="username"
-                      onChange={(e) => localStorage.setItem('github_username', e.target.value)}
-                      defaultValue={localStorage.getItem('github_username') || ''}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="twitter_username" className="block text-xs font-medium text-gray-700">Twitter Username</label>
-                    <input
-                      type="text"
-                      id="twitter_username"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                      placeholder="username"
-                      onChange={(e) => localStorage.setItem('twitter_username', e.target.value)}
-                      defaultValue={localStorage.getItem('twitter_username') || ''}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="linkedin_username" className="block text-xs font-medium text-gray-700">LinkedIn Username</label>
-                    <input
-                      type="text"
-                      id="linkedin_username"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                      placeholder="username"
-                      onChange={(e) => localStorage.setItem('linkedin_username', e.target.value)}
-                      defaultValue={localStorage.getItem('linkedin_username') || ''}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-            
             <div className="mt-6 flex flex-col sm:flex-row sm:space-x-4 space-y-3 sm:space-y-0">
               <Link
                 to="/upload"
