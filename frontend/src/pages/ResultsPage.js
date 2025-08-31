@@ -755,7 +755,6 @@ function ResultsPage() {
                   <ul className="list-disc pl-5 mt-2 space-y-1">
                     <li>Missing or incomplete information in your resume</li>
                     <li>Issues with the verification service</li>
-                    <li>Invalid social media usernames</li>
                     <li>Temporary API limitations</li>
                   </ul>
                 </>
@@ -773,12 +772,6 @@ function ResultsPage() {
                 <button
                   onClick={() => {
                     console.log('Try Again button clicked');
-                    
-                    // Clear localStorage when trying again
-                    localStorage.removeItem('github_username');
-                    localStorage.removeItem('twitter_username');
-                    localStorage.removeItem('linkedin_username');
-                    console.log('Cleared social media usernames from localStorage on Try Again');
                     
                     setError('');
                     setLoading(true);
