@@ -1,32 +1,43 @@
 import PyPDF2
 import docx
 import re
-import spacy
 from typing import Dict, Any, List, Optional
 import os
 
-# Load spaCy model for NER with robust fallbacks
+# Lightweight NLP fallback for cloud deployments
 class SimpleNLP:
     def __call__(self, text):
-        return text
+        return SimpleDoc(text)
+    
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
 
-    @property
-    def ents(self):
+class SimpleDoc:
+    def __init__(self, text):
+        self.text = text
+        self.ents = []
+    
+    def __getattr__(self, name):
         return []
 
+# Try to load spaCy with fallback for cloud deployments
 nlp = None
 try:
-    nlp = spacy.load("en_core_web_sm")
-except Exception as e:
-    # Try to download model once, then attempt load again
+    import spacy
+    # Try to use a blank English model first (smaller)
     try:
-        import subprocess
-        print("Attempting to download spaCy model en_core_web_sm...")
-        subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"], check=True)
-        nlp = spacy.load("en_core_web_sm")
-    except Exception as e2:
-        print(f"Falling back to SimpleNLP due to spaCy load/download error: {e2}")
-        nlp = SimpleNLP()
+        nlp = spacy.blank("en")
+        print("Using spaCy blank English model")
+    except:
+        # Fallback to full model if available
+        try:
+            nlp = spacy.load("en_core_web_sm")
+            print("Using spaCy full English model")
+        except:
+            raise Exception("No spaCy model available")
+except Exception as e:
+    print(f"SpaCy not available, using simple NLP fallback: {e}")
+    nlp = SimpleNLP()
 
 def parse_resume(file_path: str) -> Dict[str, Any]:
     """Parse resume file and extract information"""
