@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_BASE_URL } from '../config/api';
 
 function ResultsPage() {
   const { resumeId } = useParams();
@@ -20,7 +21,7 @@ function ResultsPage() {
   // Function to fetch score
   const fetchScore = useCallback(async () => {
     try {
-      const response = await axios.get(`http://localhost:8000/api/score/${resumeId}`);
+      const response = await axios.get(`${API_BASE_URL}/api/score/${resumeId}`);
       setScore(response.data);
       setLoading(false);
     } catch (error) {
@@ -39,7 +40,7 @@ function ResultsPage() {
         return;
       }
 
-      const response = await axios.get(`http://localhost:8000/api/verification/${resumeId}`);
+      const response = await axios.get(`${API_BASE_URL}/api/verification/${resumeId}`);
       setVerificationData(response.data);
       
       if (response.data.status === 'completed') {
@@ -53,7 +54,7 @@ function ResultsPage() {
         
         // Fetch score once verification is complete
         try {
-          const scoreResponse = await axios.get(`http://localhost:8000/api/score/${resumeId}`);
+          const scoreResponse = await axios.get(`${API_BASE_URL}/api/score/${resumeId}`);
           console.log('Score data received:', scoreResponse.data);
           setScore(scoreResponse.data);
           setLoading(false);
@@ -141,7 +142,7 @@ function ResultsPage() {
   // Fetch parsed resume data
   const fetchResumeData = useCallback(async () => {
     try {
-      const response = await axios.get(`http://localhost:8000/api/resume/${resumeId}`);
+      const response = await axios.get(`${API_BASE_URL}/api/resume/${resumeId}`);
       // If processing, return null so caller can retry later
       if (response.status === 202 || response.data.status === 'processing') {
         return null;
@@ -225,7 +226,7 @@ function ResultsPage() {
       };
 
       console.log('Sending verification request with social data (resolved):', socialData);
-      await axios.post(`http://localhost:8000/api/verification/${resumeId}`, socialData);
+      await axios.post(`${API_BASE_URL}/api/verification/${resumeId}`, socialData);
       // Start checking verification status
       checkVerificationStatus();
     } catch (error) {
@@ -635,7 +636,7 @@ function ResultsPage() {
     const sendInvitation = async () => {
       setSending(true);
       try {
-        const response = await axios.post(`http://localhost:8000/api/invite/${resumeId}`, {
+        const response = await axios.post(`${API_BASE_URL}/api/invite/${resumeId}`, {
           message: "Congratulations! Based on your resume analysis, we would like to invite you for an interview.",
           interview_date: null,
           interview_location: null
