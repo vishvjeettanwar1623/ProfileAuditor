@@ -20,11 +20,23 @@ async def get_score(resume_id: str):
     from app.api.endpoints.verification import verification_storage
     
     if resume_id not in verification_storage:
-        raise HTTPException(status_code=404, detail="Verification not found")
+        raise HTTPException(status_code=404, detail="Verification not found. Please start verification first.")
     
     verification_data = verification_storage[resume_id]
     
-    if verification_data.get("status") != "completed":
+    # Check verification status
+    verification_status = verification_data.get("status")
+    if verification_status == "processing":
+        raise HTTPException(
+            status_code=202, 
+            detail="Verification is still in progress. Please wait and try again."
+        )
+    elif verification_status == "error":
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Verification failed: {verification_data.get('error', 'Unknown error')}"
+        )
+    elif verification_status != "completed":
         raise HTTPException(
             status_code=400, 
             detail="Verification not completed. Cannot calculate score."

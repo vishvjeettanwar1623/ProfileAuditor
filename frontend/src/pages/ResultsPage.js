@@ -60,8 +60,17 @@ function ResultsPage() {
           setLoading(false);
         } catch (scoreError) {
           console.error('Error fetching score after verification completed:', scoreError);
-          setError('Error fetching score. Please try again.');
-          setLoading(false);
+          
+          // If score is still processing (202), retry after a delay
+          if (scoreError.response?.status === 202) {
+            console.log('Score calculation still in progress, will retry...');
+            setTimeout(() => {
+              checkVerificationStatus(); // This will retry score fetching
+            }, 3000);
+          } else {
+            setError('Error fetching score. Please try again.');
+            setLoading(false);
+          }
         }
       } else if (response.data.status === 'error') {
         setVerificationStatus('error');
