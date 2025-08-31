@@ -4,17 +4,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# Try to import SendGrid (if available)
-try:
-    from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail
-    SENDGRID_AVAILABLE = True
-except ImportError:
-    SENDGRID_AVAILABLE = False
-
 # Get email configuration from environment variables
 EMAIL_FROM = os.getenv("EMAIL_FROM", "recruiter@profileauditor.ai")
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
@@ -81,28 +72,6 @@ def create_email_body(
     """
     
     return body
-
-def send_with_sendgrid(to_email: str, subject: str, body: str) -> bool:
-    """Send email using SendGrid"""
-    try:
-        # Create SendGrid message
-        message = Mail(
-            from_email=EMAIL_FROM,
-            to_emails=to_email,
-            subject=subject,
-            html_content=body
-        )
-        
-        # Send email
-        sg = SendGridAPIClient(SENDGRID_API_KEY)
-        response = sg.send(message)
-        
-        # Check if email was sent successfully
-        return response.status_code in [200, 201, 202]
-    
-    except Exception as e:
-        print(f"Error sending email with SendGrid: {str(e)}")
-        return False
 
 def send_with_smtp(to_email: str, subject: str, body: str) -> bool:
     """Send email using SMTP"""
