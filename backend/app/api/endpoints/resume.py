@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
 import uuid
 import os
@@ -14,7 +14,6 @@ resume_storage = {}
 
 @router.post("/upload", response_model=ResumeResponse)
 async def upload_resume(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     name: Optional[str] = Form(None),
     email: Optional[str] = Form(None)
@@ -54,21 +53,31 @@ async def upload_resume(
         resume_storage[resume_id] = {"status": "processing"}
         print(f"Resume {resume_id} added to storage with 'processing' status")
         
-        # Parse resume in background
-        background_tasks.add_task(
-            process_resume, 
-            resume_id=resume_id,
-            file_path=file_location,
-            name=name,
-            email=email
-        )
-        print(f"Background task added to process resume {resume_id}")
-        
-        return ResumeResponse(
-            resume_id=resume_id,
-            message="Resume uploaded successfully and is being processed",
-            status="processing"
-        )
+        # Process resume synchronously for serverless compatibility
+        try:
+            process_resume(
+                resume_id=resume_id,
+                file_path=file_location,
+                name=name,
+                email=email
+            )
+            print(f"Resume processing completed for {resume_id}")
+            
+            # Check if processing was successful
+            if resume_id in resume_storage and resume_storage[resume_id].get("status") == "completed":
+                return ResumeResponse(
+                    resume_id=resume_id,
+                    message="Resume uploaded and processed successfully",
+                    status="completed"
+                )
+            else:
+                # Processing failed
+                error_msg = resume_storage.get(resume_id, {}).get("error", "Unknown processing error")
+                raise HTTPException(status_code=400, detail=error_msg)
+                
+        except Exception as process_error:
+            print(f"Resume processing failed: {str(process_error)}")
+            raise HTTPException(status_code=400, detail=f"Resume processing failed: {str(process_error)}")
     
     except Exception as e:
         print(f"Error during resume upload: {str(e)}")

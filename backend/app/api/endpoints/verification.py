@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, List, Optional
 
 from app.services.github_service import verify_github_claims
@@ -19,7 +19,7 @@ class VerificationRequest(BaseModel):
     linkedin_username: Optional[str] = None
 
 @router.post("/{resume_id}", response_model=VerificationResponse)
-async def start_verification(resume_id: str, verification_request: VerificationRequest, background_tasks: BackgroundTasks):
+async def start_verification(resume_id: str, verification_request: VerificationRequest):
     """Start the verification process for a resume"""
     from app.api.endpoints.resume import resume_storage
     
