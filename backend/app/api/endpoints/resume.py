@@ -31,8 +31,8 @@ async def upload_resume(
     if not filename_lower.endswith((".pdf", ".docx")):
         raise HTTPException(status_code=400, detail="File must be PDF or DOCX")
     
-    # Save file temporarily
-    temp_dir = os.path.join(os.getcwd(), "temp")
+    # Save file temporarily - use /tmp in serverless environments
+    temp_dir = "/tmp" if os.environ.get("VERCEL") else os.path.join(os.getcwd(), "temp")
     os.makedirs(temp_dir, exist_ok=True)
     print(f"Temp directory: {temp_dir}")
     
