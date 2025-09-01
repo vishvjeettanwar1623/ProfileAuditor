@@ -1,6 +1,6 @@
 # ProfileAuditor
 
-A hackathon-ready project that verifies resume claims against online activity and generates a Reality Score.
+A application that verifies resume claims against online activity and generates a Reality Score.
 
 ## Features
 
