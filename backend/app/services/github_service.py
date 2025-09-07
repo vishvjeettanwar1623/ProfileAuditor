@@ -101,31 +101,50 @@ def get_user_repositories(username: str) -> List[Dict[str, Any]]:
     else:
         print("No GitHub token provided, making unauthenticated request")
     
-    # For demo purposes, limit to 100 repositories
-    url = f"{GITHUB_API_URL}/users/{username}/repos?per_page=100"
-    print(f"Making request to: {url}")
+    # Fetch ALL repositories by paginating through all pages
+    all_repos = []
+    page = 1
+    per_page = 100
     
-    try:
-        response = requests.get(url, headers=headers, timeout=60)  # Increased timeout from 10 to 60 seconds
-        print(f"GitHub API response status: {response.status_code}")
+    while True:
+        url = f"{GITHUB_API_URL}/users/{username}/repos?per_page={per_page}&page={page}"
+        print(f"Making request to: {url}")
         
-        if response.status_code == 404:
-            print(f"User {username} not found on GitHub, using mock data")
-            return get_mock_repositories(username)  # Use mock data instead of empty list
-        elif response.status_code == 403:
-            print(f"GitHub API rate limit exceeded or forbidden")
-            return get_mock_repositories(username)
-        elif response.status_code != 200:
-            print(f"GitHub API error: {response.status_code} - {response.text}")
-            return get_mock_repositories(username)
-        
-        repos = response.json()
-        print(f"Successfully fetched {len(repos)} repositories")
-        return repos
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Network error when fetching repositories: {str(e)}")
-        return get_mock_repositories(username)
+        try:
+            response = requests.get(url, headers=headers, timeout=60)
+            print(f"GitHub API response status: {response.status_code}")
+            
+            if response.status_code == 404:
+                print(f"User {username} not found on GitHub, using mock data")
+                return get_mock_repositories(username)
+            elif response.status_code == 403:
+                print(f"GitHub API rate limit exceeded or forbidden")
+                return get_mock_repositories(username) if page == 1 else all_repos
+            elif response.status_code != 200:
+                print(f"GitHub API error: {response.status_code} - {response.text}")
+                return get_mock_repositories(username) if page == 1 else all_repos
+            
+            repos = response.json()
+            
+            # If no repositories returned, we've reached the end
+            if not repos:
+                break
+                
+            all_repos.extend(repos)
+            print(f"Fetched {len(repos)} repositories from page {page}, total: {len(all_repos)}")
+            
+            # If we got fewer than per_page, we're done
+            if len(repos) < per_page:
+                break
+                
+            page += 1
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Network error when fetching repositories: {str(e)}")
+            return get_mock_repositories(username) if page == 1 else all_repos
+    
+    print(f"Successfully fetched {len(all_repos)} total repositories")
+    return all_repos
 
 def get_user_languages(repos: List[Dict[str, Any]]) -> Dict[str, int]:
     """Get user languages from repositories"""
@@ -384,24 +403,43 @@ def verify_projects(projects: List[Any], repos: List[Dict[str, Any]]) -> tuple:
             # Check if project name is contained in repo name (or vice versa)
             contains_match = False
             if not exact_match:
-                project_words = set(project_name.lower().split())
-                repo_words = set(repo_name.lower().split())
+                project_lower = project_name.lower().strip()
+                repo_lower = repo_name.lower().strip()
                 
-                # If project has multiple words, check if they're all in repo name
-                if len(project_words) > 1 and project_words.issubset(repo_words):
+                # Direct substring matching - key improvement for cases like "Questfi" in "Questfi-Vietbuild"
+                if project_lower in repo_lower or repo_lower in project_lower:
                     contains_match = True
-                # Or if repo name contains the full project name as substring
-                elif project_name.lower() in repo_name.lower():
-                    contains_match = True
-                # Or if normalized project name matches normalized repo name
+                    print(f"    Direct substring match: '{project_lower}' <-> '{repo_lower}'")
+                
+                # Word-based matching for multi-word projects
+                elif len(project_name.split()) > 1:
+                    project_words = set(project_name.lower().split())
+                    repo_words = set(repo_name.lower().split())
+                    
+                    # If project has multiple words, check if they're all in repo name
+                    if project_words.issubset(repo_words):
+                        contains_match = True
+                        print(f"    Word subset match: {project_words} ⊆ {repo_words}")
+                
+                # Normalized name matching (handles hyphens, underscores, spaces)
                 elif normalize_name(project_name) == normalize_name(repo_name):
                     contains_match = True
+                    print(f"    Normalized match: '{normalize_name(project_name)}' == '{normalize_name(repo_name)}'")
+                
+                # Prefix/suffix matching for common GitHub patterns
+                elif (repo_lower.startswith(project_lower + '-') or 
+                      repo_lower.startswith(project_lower + '_') or
+                      repo_lower.endswith('-' + project_lower) or 
+                      repo_lower.endswith('_' + project_lower)):
+                    contains_match = True
+                    print(f"    Prefix/suffix match: '{project_lower}' in '{repo_lower}'")
             
             # Check description for additional evidence
             desc_match = False
             if not exact_match and not contains_match and repo_desc:
                 if project_name.lower() in repo_desc.lower():
                     desc_match = True
+                    print(f"    Description match: '{project_name.lower()}' in description")
             
             if exact_match or contains_match or desc_match:
                 matching_repos.append(repo_name)

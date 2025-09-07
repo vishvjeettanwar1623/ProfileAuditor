@@ -56,6 +56,9 @@ function ResultsPage() {
         try {
           const scoreResponse = await axios.get(`${API_BASE_URL}/api/score/${resumeId}`);
           console.log('Score data received:', scoreResponse.data);
+          console.log('Projects in score data:', scoreResponse.data.verified_projects);
+          console.log('Unverified projects in score data:', scoreResponse.data.unverified_projects);
+          console.log('Full breakdown:', scoreResponse.data.breakdown);
           setScore(scoreResponse.data);
           setLoading(false);
         } catch (scoreError) {

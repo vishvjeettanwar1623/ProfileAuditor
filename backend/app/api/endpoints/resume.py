@@ -100,6 +100,24 @@ async def get_resume(resume_id: str):
     
     return resume_data
 
+@router.get("/{resume_id}/debug")
+async def debug_resume(resume_id: str):
+    """Debug endpoint to see raw parsed data"""
+    if resume_id not in resume_storage:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    
+    resume_data = resume_storage[resume_id]
+    
+    return {
+        "resume_id": resume_id,
+        "raw_data": resume_data,
+        "projects_count": len(resume_data.get("projects", [])),
+        "skills_count": len(resume_data.get("skills", [])),
+        "projects": resume_data.get("projects", []),
+        "skills": resume_data.get("skills", []),
+        "status": resume_data.get("status", "unknown")
+    }
+
 @router.post("/test/{resume_id}")
 async def create_test_resume(resume_id: str):
     """Create a test resume for verification testing"""
