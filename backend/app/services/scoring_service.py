@@ -8,8 +8,7 @@ try:
 except Exception:
     genai = None  # Fallback handled at runtime
 
-# Default Gemini API Key per requirement (can be overridden by environment)
-DEFAULT_GEMINI_API_KEY = "AIzaSyCfaVChVIoeE9se5xULvafD0YazbIuT6ck"
+# Gemini configuration from environment variables
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 
@@ -20,7 +19,7 @@ def _call_gemini_for_score(payload: Dict[str, Any]) -> Optional[float]:
     Returns None if the call cannot be completed; caller should fallback.
     """
     try:
-        api_key = os.getenv("GEMINI_API_KEY", DEFAULT_GEMINI_API_KEY)
+        api_key = os.getenv("GEMINI_API_KEY")
         if not api_key or genai is None:
             return None
         # Configure client (idempotent)
