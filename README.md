@@ -1,6 +1,10 @@
 # ProfileAuditor
 
-A application that verifies resume claims against online activity and generates a Reality Score.
+A application that verifies resume claims against online activity and geNotes:
+- The frontend expects the backend at http://localhost:8000. If you change the port, you'll need to update any hardcoded URLs in the frontend (e.g., axios calls).
+- If port 8000 is in use, you can pick another port by changing the uvicorn command (e.g., `--port 8001`).
+- **Troubleshooting**: If you get "uvicorn is not recognized", make sure to use `python -m uvicorn` instead of just `uvicorn`.
+- **Virtual Environment**: Make sure your virtual environment is activated (you should see `(.venv)` in your terminal prompt).ates a Reality Score.
 
 ## Features
 
@@ -83,7 +87,7 @@ You can run just the FastAPI backend without Docker.
    ```
 3. Start the server (hot-reload):
    ```powershell
-   uvicorn app.main:app --reload --port 8000
+   python -m uvicorn app.main:app --reload --port 8000
    ```
 4. Verify it’s running:
    - Health check: http://localhost:8000/health
@@ -112,7 +116,7 @@ The backend will be available at http://localhost:8000
 cd backend
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 #### Frontend

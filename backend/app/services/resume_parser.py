@@ -97,104 +97,81 @@ def extract_text_from_pdf(file_path: str) -> str:
     print(f"\n=== PDF EXTRACTION START ===")
     print(f"Extracting text from PDF: {file_path}")
     
-    text = ""
-    
-    # Try Method 1: pdfplumber (best for complex layouts)
+    # Run all extraction methods and compare outputs
+    extraction_results = {}
+
+    # Method 1: pdfplumber
     if PDFPLUMBER_AVAILABLE:
         try:
-            print("Trying pdfplumber extraction...")
             with pdfplumber.open(file_path) as pdf:
                 extracted_text = ""
-                for page_num, page in enumerate(pdf.pages):
+                for page in pdf.pages:
                     page_text = page.extract_text() or ""
-                    print(f"pdfplumber Page {page_num + 1}: {len(page_text)} chars")
                     extracted_text += page_text + "\n"
-                
-                if extracted_text.strip():
-                    text = extracted_text
-                    print(f"✅ pdfplumber extraction successful: {len(text)} chars")
-                else:
-                    print("❌ pdfplumber extraction returned empty text")
+                extraction_results['pdfplumber'] = extracted_text
         except Exception as e:
-            print(f"❌ pdfplumber extraction failed: {str(e)}")
-    
-    # Try Method 2: PyMuPDF if pdfplumber failed
-    if not text and PYMUPDF_AVAILABLE:
+            extraction_results['pdfplumber'] = ''
+
+    # Method 2: PyMuPDF
+    if PYMUPDF_AVAILABLE:
         try:
-            print("Trying PyMuPDF extraction...")
             doc = fitz.open(file_path)
             extracted_text = ""
             for page_num in range(len(doc)):
                 page = doc.load_page(page_num)
                 page_text = page.get_text()
-                print(f"PyMuPDF Page {page_num + 1}: {len(page_text)} chars")
                 extracted_text += page_text + "\n"
             doc.close()
-            
-            if extracted_text.strip():
-                text = extracted_text
-                print(f"✅ PyMuPDF extraction successful: {len(text)} chars")
-            else:
-                print("❌ PyMuPDF extraction returned empty text")
+            extraction_results['pymupdf'] = extracted_text
         except Exception as e:
-            print(f"❌ PyMuPDF extraction failed: {str(e)}")
-    
-    # Try Method 3: pdfminer if others failed
-    if not text and PDFMINER_AVAILABLE:
+            extraction_results['pymupdf'] = ''
+
+    # Method 3: pdfminer
+    if PDFMINER_AVAILABLE:
         try:
-            print("Trying pdfminer extraction...")
             extracted_text = pdfminer_extract_text(file_path)
-            if extracted_text and extracted_text.strip():
-                text = extracted_text
-                print(f"✅ pdfminer extraction successful: {len(text)} chars")
-            else:
-                print("❌ pdfminer extraction returned empty text")
+            extraction_results['pdfminer'] = extracted_text
         except Exception as e:
-            print(f"❌ pdfminer extraction failed: {str(e)}")
-    
-    # Fallback Method 4: PyPDF2 (last resort)
-    if not text:
-        try:
-            print("Trying PyPDF2 extraction (fallback)...")
-            with open(file_path, "rb") as file:
-                reader = PyPDF2.PdfReader(file)
-                extracted_text = ""
-                for page_num, page in enumerate(reader.pages):
-                    try:
-                        page_text = page.extract_text() or ""
-                        print(f"PyPDF2 Page {page_num + 1}: {len(page_text)} chars")
-                        extracted_text += page_text + "\n"
-                    except Exception as e:
-                        print(f"Error extracting PyPDF2 page {page_num + 1}: {str(e)}")
-                        continue
-                
-                if extracted_text.strip():
-                    text = extracted_text
-                    print(f"✅ PyPDF2 extraction successful: {len(text)} chars")
-                else:
-                    print("❌ PyPDF2 extraction returned empty text")
-        except Exception as e:
-            print(f"❌ PyPDF2 extraction failed: {str(e)}")
-    
-    if not text:
-        print("❌ ALL PDF extraction methods failed!")
-        return ""
-    
-    # Clean the extracted text
-    print("🧹 Cleaning extracted text...")
-    text = clean_pdf_text(text)
-    
+            extraction_results['pdfminer'] = ''
+
+    # Method 4: PyPDF2
+    try:
+        with open(file_path, "rb") as file:
+            reader = PyPDF2.PdfReader(file)
+            extracted_text = ""
+            for page in reader.pages:
+                page_text = page.extract_text() or ""
+                extracted_text += page_text + "\n"
+            extraction_results['pypdf2'] = extracted_text
+    except Exception as e:
+        extraction_results['pypdf2'] = ''
+
+    # Clean and score all results
+    cleaned_results = {}
+    for method, raw_text in extraction_results.items():
+        cleaned = clean_pdf_text(raw_text or "")
+        cleaned_results[method] = cleaned
+
+    # Heuristic: pick the result with the most unique words and length
+    def score(text):
+        words = set(text.split())
+        return (len(words), len(text))
+
+    best_method = max(cleaned_results, key=lambda m: score(cleaned_results[m]))
+    best_text = cleaned_results[best_method]
+
+    print(f"Best PDF extraction method: {best_method} ({len(best_text)} chars, {len(set(best_text.split()))} unique words)")
+
     # Show sample for debugging projects section
-    if "PROJECTS" in text.upper():
-        project_start = text.upper().find("PROJECTS")
+    if "PROJECTS" in best_text.upper():
+        project_start = best_text.upper().find("PROJECTS")
         if project_start >= 0:
-            sample = text[project_start:project_start + 500]
+            sample = best_text[project_start:project_start + 500]
             print(f"PROJECTS section sample: {repr(sample[:200])}...")
-    
+
     print(f"=== PDF EXTRACTION COMPLETE ===")
-    print(f"Final cleaned text: {len(text)} characters")
-    
-    return text.strip()
+    print(f"Final cleaned text: {len(best_text)} characters")
+    return best_text.strip()
 
 def clean_pdf_text(text: str) -> str:
     """Clean and normalize PDF extracted text"""
@@ -596,61 +573,24 @@ def extract_projects(doc_or_text, text: str = None) -> List[Dict[str, Any]]:
     
     print(f"Found {len(total_em_dash_matches)} total dash/space matches")
     
+    def clean_project_name(name: str) -> str:
+        # Remove any trailing repeated syllables (e.g., 'Auditoror', 'Managerer', etc.)
+        for _ in range(3):
+            name = re.sub(r'(\b\w{3,}?)(or|er|ar|ur|ir)+\b', r'\1', name, flags=re.IGNORECASE)
+        # Remove accidental double words (e.g., 'Profile Auditor Auditor')
+        name = re.sub(r'\b(\w+) \1\b', r'\1', name)
+        # Remove special characters, extra spaces
+        name = re.sub(r'[^a-zA-Z0-9\s\-]', '', name)
+        name = re.sub(r'\s+', ' ', name)
+        return name.strip().title()
+
     for match in total_em_dash_matches:
-        project_name = match[0].strip()
+        raw_project_name = match[0].strip()
+        project_name = clean_project_name(raw_project_name)
         project_desc = match[1].strip()
-        
-        print(f"Checking dash match: '{project_name}' — '{project_desc}'")
-        
-        # Skip if project name contains section headers
-        if any(header in project_name.upper() for header in ['PROJECTS', 'EXPERIENCE', 'EDUCATION', 'SKILLS', 'ACHIEVEMENTS', 'INTERNSHIP', 'AWARDS']):
-            print(f"❌ Rejected dash match: '{project_name}' (contains section header)")
-            continue
-            
-        # Skip if this looks like achievements content (more comprehensive check)
-        achievement_keywords = ['prize', 'award', 'hackathon', 'competition', 'winner', 'achievement', 'certificate', 'honor', 'built a blockchain', 'engaged in a national', 'demonstrating problem-solving', '3rd prize', '30th position', 'completed a 21', 'algohour', 'regional hackathon']
-        social_keywords = ['twitter', 'gmail', 'linkedin', 'github', 'email', 'phone', '.com', '@', 'www.', 'http', 'https']
-        experience_keywords = ['intern', 'internship', 'remote', 'present', 'hackquest', 'offscript', 'advocate', 'building and managing', 'promoting web3']
-        
-        combined_text = (project_name + " " + project_desc).lower()
-        
-        if any(keyword in combined_text for keyword in achievement_keywords):
-            print(f"❌ Rejected dash match: '{project_name}' (achievements content)")
-            continue
-            
-        if any(keyword in combined_text for keyword in social_keywords):
-            print(f"❌ Rejected dash match: '{project_name}' (social media/contact content)")
-            continue
-            
-        if any(keyword in combined_text for keyword in experience_keywords):
-            print(f"❌ Rejected dash match: '{project_name}' (experience/work content)")
-            continue
-            
-        # Skip if this appears to be from achievements section (check context)
-        # Look for achievement markers before the match
-        match_pos = text.find(project_name)
-        if match_pos > 0:
-            preceding_text = text[max(0, match_pos - 200):match_pos].lower()
-            if any(keyword in preceding_text for keyword in ['achievements', 'extra-curricular', 'hackathon', 'competition', 'prize']):
-                print(f"❌ Rejected dash match: '{project_name}' (found in achievements context)")
-                continue
-        
-        # Validate this looks like a project
-        if (len(project_name) >= 3 and len(project_name) <= 60 and 
-            project_name[0].isupper() and
-            # Exclude obvious non-projects
-            not any(keyword in project_name.lower() for keyword in ['achievements', 'awards', 'honors', 'experience', 'education', 'skills', 'certifications', 'contact', 'summary', 'languages', 'interests']) and
-            # Include if it has project-like keywords OR is a proper noun
-            (any(keyword in (project_name + " " + project_desc).lower() for keyword in ['platform', 'app', 'website', 'system', 'tool', 'network', 'blockchain', 'data', 'bounty', 'verification', 'auditor', 'sharing', 'monetization']) or
-             (len(project_name.split()) <= 4 and not any(word in project_name.lower() for word in ['and', 'or', 'the', 'of', 'in', 'at', 'on', 'for'])))):
-            
-            projects.append({
-                "name": project_name,
-                "description": project_desc
-            })
-            print(f"✅ Added dash project: '{project_name}' — '{project_desc}'")
-        else:
-            print(f"❌ Rejected dash match: '{project_name}' (validation failed)")
+
+        print(f"Checking dash match: '{raw_project_name}' (cleaned: '{project_name}') — '{project_desc}'")
+        # ...existing code...
     
     # Also look for projects in a dedicated PROJECTS section (but exclude achievements section)
     project_section_patterns = [

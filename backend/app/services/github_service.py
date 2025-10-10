@@ -298,13 +298,10 @@ def verify_projects(projects: List[Any], repos: List[Dict[str, Any]]) -> tuple:
     print(f"Available repositories: {[repo.get('name', '') for repo in repos]}")
 
     def normalize_name(name: str) -> str:
-        """Normalize a name for comparison"""
+        """Normalize a name for comparison: lowercase, remove spaces, dashes, underscores, special chars"""
         if not name:
             return ""
-        # Convert to lowercase, replace spaces/underscores with hyphens, remove special chars
-        normalized = re.sub(r'[^a-zA-Z0-9\s\-_]', '', name.lower())
-        normalized = re.sub(r'[\s_]+', '-', normalized)
-        normalized = re.sub(r'-+', '-', normalized).strip('-')
+        normalized = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
         return normalized
 
     def get_name_variants(name: str) -> List[str]:
@@ -365,97 +362,56 @@ def verify_projects(projects: List[Any], repos: List[Dict[str, Any]]) -> tuple:
         return list(set([v for v in variants if v]))
 
     for project in projects:
-        # Extract project name
+        # Extract and clean project name
         if isinstance(project, dict):
-            project_name = project.get("name", "").strip()
+            raw_project_name = project.get("name", "").strip()
         else:
-            project_name = str(project).strip()
-        
-        if not project_name:
+            raw_project_name = str(project).strip()
+        project_name = raw_project_name
+        # Clean the project name for matching
+        cleaned_project_name = raw_project_name
+        # Use the same cleaning as extraction for matching
+        for _ in range(3):
+            cleaned_project_name = re.sub(r'(\b\w{3,}?)(or|er|ar|ur|ir)+\b', r'\1', cleaned_project_name, flags=re.IGNORECASE)
+        cleaned_project_name = re.sub(r'\b(\w+) \1\b', r'\1', cleaned_project_name)
+        cleaned_project_name = re.sub(r'[^a-zA-Z0-9\s\-]', '', cleaned_project_name)
+        cleaned_project_name = re.sub(r'\s+', ' ', cleaned_project_name)
+        cleaned_project_name = cleaned_project_name.strip().title()
+        norm_project = normalize_name(cleaned_project_name)
+        if not norm_project:
             continue
-            
-        print(f"\n--- Checking project: '{project_name}' ---")
-        
-        # Get all variants of the project name
-        project_variants = get_name_variants(project_name)
-        print(f"Project variants: {project_variants}")
-        
+        print(f"\n--- Checking project: '{raw_project_name}' (cleaned: '{cleaned_project_name}', normalized: '{norm_project}') ---")
         matching_repos = []
         match_types = []
-        
         for repo in repos:
             repo_name = repo.get("name", "").strip()
             repo_desc = repo.get("description", "") or ""
-            
             if not repo_name:
                 continue
-                
-            # Get repo name variants
-            repo_variants = get_name_variants(repo_name)
-            
-            # Check for exact matches between project variants and repo variants
-            exact_match = False
-            for project_variant in project_variants:
-                if project_variant in repo_variants:
-                    exact_match = True
-                    break
-            
-            # Check if project name is contained in repo name (or vice versa)
-            contains_match = False
-            if not exact_match:
-                project_lower = project_name.lower().strip()
-                repo_lower = repo_name.lower().strip()
-                
-                # Direct substring matching - key improvement for cases like "Questfi" in "Questfi-Vietbuild"
-                if project_lower in repo_lower or repo_lower in project_lower:
-                    contains_match = True
-                    print(f"    Direct substring match: '{project_lower}' <-> '{repo_lower}'")
-                
-                # Word-based matching for multi-word projects
-                elif len(project_name.split()) > 1:
-                    project_words = set(project_name.lower().split())
-                    repo_words = set(repo_name.lower().split())
-                    
-                    # If project has multiple words, check if they're all in repo name
-                    if project_words.issubset(repo_words):
-                        contains_match = True
-                        print(f"    Word subset match: {project_words} ⊆ {repo_words}")
-                
-                # Normalized name matching (handles hyphens, underscores, spaces)
-                elif normalize_name(project_name) == normalize_name(repo_name):
-                    contains_match = True
-                    print(f"    Normalized match: '{normalize_name(project_name)}' == '{normalize_name(repo_name)}'")
-                
-                # Prefix/suffix matching for common GitHub patterns
-                elif (repo_lower.startswith(project_lower + '-') or 
-                      repo_lower.startswith(project_lower + '_') or
-                      repo_lower.endswith('-' + project_lower) or 
-                      repo_lower.endswith('_' + project_lower)):
-                    contains_match = True
-                    print(f"    Prefix/suffix match: '{project_lower}' in '{repo_lower}'")
-            
-            # Check description for additional evidence
+            norm_repo = normalize_name(repo_name)
+            print(f"DEBUG: Comparing normalized project '{norm_project}' with repo '{norm_repo}'")
+            contains_match = norm_project in norm_repo
+            if contains_match:
+                print(f"    Normalized substring match: '{norm_project}' in '{norm_repo}'")
             desc_match = False
-            if not exact_match and not contains_match and repo_desc:
-                if project_name.lower() in repo_desc.lower():
+            if not contains_match and repo_desc:
+                if norm_project in normalize_name(repo_desc):
                     desc_match = True
-                    print(f"    Description match: '{project_name.lower()}' in description")
-            
-            if exact_match or contains_match or desc_match:
+                    print(f"    Description match: '{norm_project}' in description")
+            if contains_match or desc_match:
                 matching_repos.append(repo_name)
-                match_type = "exact" if exact_match else ("contains" if contains_match else "description")
+                match_type = "contains" if contains_match else "description"
                 match_types.append(f"{repo_name} ({match_type})")
-                print(f"✅ Match found: '{project_name}' -> '{repo_name}' (type: {match_type})")
-        
+                print(f"✅ Match found: '{cleaned_project_name}' -> '{repo_name}' (type: {match_type})")
         if matching_repos:
-            verified_projects.append(project_name)
-            proof[project_name] = [
+            verified_projects.append(cleaned_project_name)
+            proof[cleaned_project_name] = [
                 f"Found matching repositories: {', '.join(matching_repos)}",
                 f"Match details: {', '.join(match_types)}"
             ]
-            print(f"✅ Project '{project_name}' VERIFIED with {len(matching_repos)} matching repos")
+            print(f"✅ Project '{cleaned_project_name}' VERIFIED with {len(matching_repos)} matching repos")
         else:
-            print(f"❌ Project '{project_name}' NOT FOUND in any GitHub repositories")
+            print(f"❌ Project '{cleaned_project_name}' NOT FOUND in any GitHub repositories")
     
     print(f"\n=== PROJECT VERIFICATION COMPLETE ===")
     print(f"Verified projects: {verified_projects}")
