@@ -1,47 +1,32 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     "./src/**/*.{js,jsx,ts,tsx}",
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Plus Jakarta Sans', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+      },
       colors: {
-        // Matrix-inspired black and green palette
-        primary: {
-          50: '#F2F2F2',   // lightest gray
-          100: '#E6E6E6',  // lighter gray
-          200: '#CCCCCC',  // light gray
-          300: '#B3B3B3',  // medium gray
-          400: '#808080',  // gray
-          500: '#1A1A1A',  // rich black (main)
-          600: '#141414',  // deeper black
-          700: '#0D0D0D',  // very deep black
-          800: '#070707',  // almost black
-          900: '#000000'   // pure black
-        },
-        accent: {
-          neon: '#39FF14',     // electric neon green
-          matrix: '#00FF41',   // matrix green
-          emerald: '#50C878'   // emerald green
-        },
-        secondary: {
-          50: '#FFFFFF',
-          100: '#E6FFF2',
-          200: '#B3FFD9',
-          300: '#80FFC0',
-          400: '#4DFFA6',
-          500: '#1AFF8C',  // vibrant green
-          600: '#00E673',
-          700: '#00B359',
-          800: '#008040',
-          900: '#004D26'
-        },
-        highlight: {
-          glow: '#7FFF00',     // bright green glow
-          flash: '#32CD32',    // lime flash
-          cyber: '#008F11'     // cyber green
+        dark: {
+          base: '#090A0C',
+          surface: '#111418',
+          elevated: '#161A20',
+          border: '#1F242D',
+          borderLight: '#2A313C',
+          textMuted: '#64748B',
+          textBody: '#94A3B8',
+          textHead: '#F8FAFC',
         }
       },
+      boxShadow: {
+        'subtle': '0 1px 2px 0 rgba(0, 0, 0, 0.4)',
+        'card': '0 1px 3px 0 rgba(0, 0, 0, 0.5), 0 1px 2px -1px rgba(0, 0, 0, 0.5)',
+        'glow': '0 0 20px -5px rgba(255, 255, 255, 0.05)',
+      }
     },
   },
   plugins: [],
