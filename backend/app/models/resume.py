@@ -14,10 +14,13 @@ class ResumeData(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     skills: List[str] = Field(default_factory=list)
+    technical_skills: List[str] = Field(default_factory=list)
+    soft_skills: List[str] = Field(default_factory=list)
     projects: List[Dict[str, Any]] = Field(default_factory=list)
     experience: List[Dict[str, Any]] = Field(default_factory=list)
     education: List[Dict[str, Any]] = Field(default_factory=list)
     github_username: Optional[str] = None
-    twitter_username: Optional[str] = None
-    linkedin_username: Optional[str] = None
+    leetcode_username: Optional[str] = None
+    job_description: Optional[str] = None
+    raw_text: Optional[str] = None
     status: str
