@@ -12,10 +12,10 @@ class VerificationResult(BaseModel):
     resume_id: str
     status: str
     github: Dict[str, Any] = {}
-    twitter: Dict[str, Any] = {}
-    linkedin: Dict[str, Any] = {}
+    leetcode: Dict[str, Any] = {}
     verified_skills: List[str] = []
     unverified_skills: List[str] = []
+    soft_skills: List[str] = []
     verified_projects: List[str] = []
     unverified_projects: List[str] = []
     error: Optional[str] = None
