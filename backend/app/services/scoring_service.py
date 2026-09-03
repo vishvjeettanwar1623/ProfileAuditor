@@ -1,124 +1,176 @@
-from typing import Dict, Any, List, Tuple
 import os
 import re
+import json
+import requests
+from typing import Dict, Any, List, Tuple, Optional
 
-# Try to import Gemini SDK lazily; keep optional to avoid hard failures at import time
+# Optional Gemini SDK fallback
 try:
     import google.generativeai as genai  # type: ignore
 except Exception:
-    genai = None  # Fallback handled at runtime
+    genai = None
 
-# Gemini configuration from environment variables
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "liquid/lfm-2.5-2.6b:free")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 
-from typing import Optional
+def _call_openrouter_for_score(payload: Dict[str, Any]) -> Optional[float]:
+    """Call OpenRouter model to obtain an AI-evaluated Reality Score (0-100)."""
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        print("OPENROUTER_API_KEY not set; falling back to Gemini SDK or rule-based scoring")
+        return _call_gemini_for_score(payload)
+
+    system_prompt = (
+        "You are an expert technical recruiter and developer profile auditor. Assign a single overall Reality Score from 0 to 100.\n"
+        "Evaluation Principles:\n"
+        "- Reward verifiable technical evidence from GitHub code repositories and LeetCode problem solving.\n"
+        "- Penalize unverified technical claims and missing public code proof.\n"
+        "- Consider the provided sub-scores as guidance.\n"
+        "- Output ONLY the final integer number (0-100) with no additional text or formatting."
+    )
+
+    context = {
+        "breakdown": payload.get("breakdown", {}),
+        "counts": {
+            "verified_skills": len(payload.get("verified_skills", [])),
+            "unverified_skills": len(payload.get("unverified_skills", [])),
+            "verified_projects": len(payload.get("verified_projects", [])),
+            "unverified_projects": len(payload.get("unverified_projects", [])),
+        },
+        "github_audit": {
+            "has_github": bool(payload.get("github_results")),
+            "original_repos": len(payload.get("github_results", {}).get("original_repos", [])),
+            "forked_repos": len(payload.get("github_results", {}).get("forked_repos", [])),
+            "total_stars": payload.get("github_results", {}).get("total_stars", 0),
+            "languages": payload.get("github_results", {}).get("languages", []),
+        },
+        "leetcode_audit": {
+            "has_leetcode": bool(payload.get("leetcode_results", {}).get("verified")),
+            "total_solved": payload.get("leetcode_results", {}).get("total_solved", 0),
+            "ranking": payload.get("leetcode_results", {}).get("global_ranking"),
+        },
+        "rule_based_final": payload.get("rule_based_final")
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:8000",
+        "X-Title": "ProfileAuditor",
+    }
+
+    body = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"AUDIT DATA:\n{json.dumps(context)}"}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 10,
+    }
+
+    try:
+        url = f"{OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
+        print(f"Calling OpenRouter model '{OPENROUTER_MODEL}' for reality score...")
+        resp = requests.post(url, headers=headers, json=body, timeout=20)
+        if resp.status_code != 200:
+            print(f"OpenRouter returned status {resp.status_code}: {resp.text}")
+            return _call_gemini_for_score(payload)
+
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return _call_gemini_for_score(payload)
+
+        content = choices[0].get("message", {}).get("content", "").strip()
+        m = re.search(r"\b(100|\d{1,2})\b", content)
+        if not m:
+            return _call_gemini_for_score(payload)
+
+        score = float(m.group(1))
+        return max(0.0, min(100.0, score))
+    except Exception as e:
+        print(f"Error calling OpenRouter: {e}")
+        return _call_gemini_for_score(payload)
+
 
 def _call_gemini_for_score(payload: Dict[str, Any]) -> Optional[float]:
-    """Call Gemini to get an AI-driven score (0-100) with medium difficulty.
-    Returns None if the call cannot be completed; caller should fallback.
-    """
+    """Call Gemini as fallback to get an AI-driven score (0-100)."""
     try:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key or genai is None:
             return None
-        # Configure client (idempotent)
+
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(GEMINI_MODEL)
 
-        # Build concise prompt; ask for a single integer 0-100 only
         prompt = (
-            "You are an expert resume auditor. Assign a single overall Reality Score from 0 to 100.\n"
-            "Be medium difficult (moderately strict):\n"
-            "- Reward verified evidence across GitHub/Twitter/LinkedIn.\n"
-            "- Penalize unverified claims.\n"
-            "- Consider the provided rule-based sub-scores as guidance, but you may adjust.\n"
-            "- Output ONLY the number (integer 0-100) with no extra text.\n"
+            "You are an expert resume auditor. Assign a single overall Reality Score from 0 to 100 based on verified code evidence.\n"
+            "Output ONLY a single integer (0-100)."
         )
 
-        # Keep payload compact; include breakdown and counts
-        context = {
-            "breakdown": payload.get("breakdown", {}),
-            "counts": {
-                "verified_skills": len(payload.get("verified_skills", [])),
-                "unverified_skills": len(payload.get("unverified_skills", [])),
-                "verified_projects": len(payload.get("verified_projects", [])),
-                "unverified_projects": len(payload.get("unverified_projects", [])),
-            },
-            "sources": {
-                "has_github": bool(payload.get("github_results")),
-                "has_twitter": bool(payload.get("twitter_results")),
-                "has_linkedin": bool(payload.get("linkedin_results")),
-            },
-        }
-
-        # Temperature: relatively low to keep consistency; medium strictness is in instructions
-        response = model.generate_content([
-            prompt,
-            f"DATA:\n{context}"
-        ])
+        response = model.generate_content([prompt, f"DATA:\n{payload}"])
         text = (response.text or "").strip()
-        # Extract first number 0-100
         m = re.search(r"\b(100|\d{1,2})\b", text)
         if not m:
             return None
-        score = int(m.group(1))
-        # Clamp to [0, 100]
-        score = max(0, min(100, score))
-        return float(score)
+        return float(max(0, min(100, int(m.group(1)))))
     except Exception:
         return None
 
 
 def calculate_reality_score(
     github_results: Dict[str, Any],
-    twitter_results: Dict[str, Any],
-    linkedin_results: Dict[str, Any],
+    leetcode_results: Dict[str, Any],
     verified_skills: List[str],
     unverified_skills: List[str],
     verified_projects: List[str],
     unverified_projects: List[str]
 ) -> Tuple[float, Dict[str, float]]:
-    """Calculate reality score based on verification results.
-    Uses Gemini to produce the final score with medium difficulty when available; otherwise falls back to rule-based.
     """
-    # Define weights for different sources (used for rule-based guidance and breakdown)
-    weights = {
-        "github": 0.5,  # GitHub has highest weight
-        "twitter": 0.3,  # Twitter has medium weight
-        "linkedin": 0.2,  # LinkedIn has lowest weight (mock data)
-        "skills": 0.6,  # Skills have higher weight than projects
-        "projects": 0.4  # Projects have lower weight than skills
-    }
-    
-    # Calculate sub-scores (rule-based)
+    Calculate reality score based on ground-truth verification results:
+    - GitHub Code Authenticity
+    - LeetCode Problem Solving
+    - Technical Skills Verification
+    - Projects Verification
+    """
+    # 1. Calculate component sub-scores (0 - 100)
     github_score = calculate_github_score(github_results)
-    twitter_score = calculate_twitter_score(twitter_results)
-    linkedin_score = calculate_linkedin_score(linkedin_results)
+    leetcode_score = calculate_leetcode_score(leetcode_results)
     skills_score = calculate_skills_score(verified_skills, unverified_skills)
     projects_score = calculate_projects_score(verified_projects, unverified_projects)
-    
-    # Weighted composites
-    source_score = (
-        github_score * weights["github"] +
-        twitter_score * weights["twitter"] +
-        linkedin_score * weights["linkedin"]
-    )
-    content_score = (
-        skills_score * weights["skills"] +
-        projects_score * weights["projects"]
-    )
-    rule_based_final = (source_score + content_score) / 2
-    rule_based_final = max(0, min(100, rule_based_final))
 
-    # Prepare payload for AI
+    # 2. Rule-based composite calculation
+    has_leetcode = bool(leetcode_results and leetcode_results.get("verified"))
+
+    if has_leetcode:
+        # Standard balanced weights when both GitHub and LeetCode exist
+        rule_based_final = (
+            (github_score * 0.35) +
+            (skills_score * 0.30) +
+            (projects_score * 0.20) +
+            (leetcode_score * 0.15)
+        )
+    else:
+        # Dynamically normalized weights when candidate does not use LeetCode
+        rule_based_final = (
+            (github_score * 0.45) +
+            (skills_score * 0.35) +
+            (projects_score * 0.20)
+        )
+
+    rule_based_final = round(max(0.0, min(100.0, rule_based_final)), 1)
+
     breakdown = {
-        "github_score": github_score,
-        "twitter_score": twitter_score,
-        "linkedin_score": linkedin_score,
-        "skills_score": skills_score,
-        "projects_score": projects_score
+        "github_score": round(github_score, 1),
+        "leetcode_score": round(leetcode_score, 1),
+        "skills_score": round(skills_score, 1),
+        "projects_score": round(projects_score, 1)
     }
+
+    # 3. AI Reality Evaluation
     ai_payload = {
         "breakdown": breakdown,
         "verified_skills": verified_skills,
@@ -126,173 +178,69 @@ def calculate_reality_score(
         "verified_projects": verified_projects,
         "unverified_projects": unverified_projects,
         "github_results": github_results,
-        "twitter_results": twitter_results,
-        "linkedin_results": linkedin_results,
+        "leetcode_results": leetcode_results,
         "rule_based_final": rule_based_final,
     }
 
-    ai_score = _call_gemini_for_score(ai_payload)
-    final_score = ai_score if ai_score is not None else rule_based_final
+    ai_score = _call_openrouter_for_score(ai_payload)
+    if ai_score is not None:
+        final_score = round(ai_score, 1)
+    else:
+        final_score = rule_based_final
 
+    print(f"Final Reality Score: {final_score}/100 (Breakdown: {breakdown})")
     return final_score, breakdown
 
+
 def calculate_github_score(github_results: Dict[str, Any]) -> float:
-    """Calculate GitHub score"""
-    print(f"=== CALCULATING GITHUB SCORE ===")
-    print(f"GitHub results: {github_results}")
-    
-    # If there's an error or no GitHub username, return 0
-    if "error" in github_results:
-        print(f"GitHub has error: {github_results.get('error')}")
-        return 0
-    
+    """Calculate GitHub authenticity score from audit results."""
     if not github_results:
-        print(f"GitHub results is empty")
-        return 0
-    
-    # Calculate score based on repositories, languages, and contributions
-    repositories = github_results.get("repositories", [])
+        return 0.0
+
+    # If score already precomputed in deep audit
+    if "score" in github_results and github_results["score"] > 0:
+        return float(github_results["score"])
+
+    original_repos = github_results.get("original_repos", [])
     languages = github_results.get("languages", [])
-    contributions = github_results.get("contributions", 0)
-    verified_skills = github_results.get("verified_skills", [])
-    verified_projects = github_results.get("verified_projects", [])
-    
-    print(f"Repositories: {len(repositories)} - {repositories}")
-    print(f"Languages: {len(languages)} - {languages}")
-    print(f"Contributions: {contributions}")
-    print(f"Verified skills: {len(verified_skills)} - {verified_skills}")
-    print(f"Verified projects: {len(verified_projects)} - {verified_projects}")
-    
-    # Repository score (max 25 points)
-    repo_score = min(25, len(repositories) * 5)
-    print(f"Repository score: {repo_score}")
-    
-    # Language score (max 25 points)
-    language_score = min(25, len(languages) * 5)
-    print(f"Language score: {language_score}")
-    
-    # Contributions score (max 20 points)
-    contribution_score = min(20, contributions / 25)
-    print(f"Contribution score: {contribution_score}")
-    
-    # Verification score (max 30 points)
-    verification_score = min(30, (len(verified_skills) + len(verified_projects)) * 3)
-    print(f"Verification score: {verification_score}")
-    
-    # Total GitHub score (max 100 points)
-    total_score = repo_score + language_score + contribution_score + verification_score
-    print(f"Total GitHub score: {total_score}")
-    
-    return total_score
+    total_stars = github_results.get("total_stars", 0)
+    recent_active = github_results.get("recent_active_repos", [])
 
-def calculate_twitter_score(twitter_results: Dict[str, Any]) -> float:
-    """Calculate Twitter score"""
-    # If there's an error or no Twitter username, return 0
-    if "error" in twitter_results or not twitter_results:
-        return 0
-    
-    # Calculate score based on tweets and verifications
-    tweets = twitter_results.get("tweets", [])
-    verified_skills = twitter_results.get("verified_skills", [])
-    verified_projects = twitter_results.get("verified_projects", [])
-    
-    # Tweet score (max 40 points)
-    tweet_score = min(40, len(tweets) * 8)
-    
-    # Verification score (max 60 points)
-    verification_score = min(60, (len(verified_skills) + len(verified_projects)) * 6)
-    
-    # Total Twitter score (max 100 points)
-    total_score = tweet_score + verification_score
-    
-    return total_score
+    repo_points = min(35, len(original_repos) * 6)
+    lang_points = min(25, len(languages) * 6)
+    recent_points = min(20, len(recent_active) * 6)
+    star_points = min(20, total_stars * 3)
 
-def calculate_linkedin_score(linkedin_results: Dict[str, Any]) -> float:
-    """Calculate LinkedIn score"""
-    print(f"=== CALCULATING LINKEDIN SCORE ===")
-    print(f"LinkedIn results: {linkedin_results}")
-    
-    # If there's an error or no LinkedIn username, return 0
-    if "error" in linkedin_results:
-        print(f"LinkedIn has error: {linkedin_results.get('error')}")
-        return 0
-    
-    if not linkedin_results:
-        print(f"LinkedIn results is empty")
-        return 0
-    
-    # Calculate score based on profile completeness and verifications
-    profile = linkedin_results.get("profile", {})
-    verified_skills = linkedin_results.get("verified_skills", [])
-    verified_projects = linkedin_results.get("verified_projects", [])
-    
-    print(f"Profile: {profile}")
-    print(f"Verified skills: {len(verified_skills)} - {verified_skills}")
-    print(f"Verified projects: {len(verified_projects)} - {verified_projects}")
-    
-    # Profile completeness score (max 40 points)
-    profile_score = 0
-    if profile.get("name"):
-        profile_score += 10
-    if profile.get("headline"):
-        profile_score += 10
-    if profile.get("skills"):
-        profile_score += 20
-    
-    print(f"Profile completeness score: {profile_score}")
-    
-    # Verification score (max 60 points)
-    verification_score = min(60, (len(verified_skills) + len(verified_projects)) * 6)
-    print(f"Verification score: {verification_score}")
-    
-    # Total LinkedIn score (max 100 points)
-    total_score = profile_score + verification_score
-    print(f"Total LinkedIn score: {total_score}")
-    
-    return total_score
-    verified_projects = linkedin_results.get("verified_projects", [])
-    
-    # Profile score (max 40 points)
-    profile_score = 0
-    if profile.get("skills"):
-        profile_score += min(20, len(profile.get("skills", [])) * 2)
-    if profile.get("experience"):
-        profile_score += min(20, len(profile.get("experience", [])) * 7)
-    
-    # Verification score (max 60 points)
-    verification_score = min(60, (len(verified_skills) + len(verified_projects)) * 6)
-    
-    # Total LinkedIn score (max 100 points)
-    total_score = profile_score + verification_score
-    
-    return total_score
+    return float(min(100, repo_points + lang_points + recent_points + star_points))
+
+
+def calculate_leetcode_score(leetcode_results: Dict[str, Any]) -> float:
+    """Calculate LeetCode problem-solving score."""
+    if not leetcode_results or not leetcode_results.get("verified"):
+        return 0.0
+
+    if "score" in leetcode_results:
+        return float(leetcode_results["score"])
+
+    total = leetcode_results.get("total_solved", 0)
+    mediums = leetcode_results.get("medium_solved", 0)
+    hards = leetcode_results.get("hard_solved", 0)
+
+    score = (total * 0.15) + (mediums * 0.35) + (hards * 1.0)
+    return float(min(100, score))
+
 
 def calculate_skills_score(verified_skills: List[str], unverified_skills: List[str]) -> float:
-    """Calculate skills score"""
-    # If no skills, return 0
+    """Calculate technical skills verification percentage."""
     total_skills = len(verified_skills) + len(unverified_skills)
     if total_skills == 0:
-        return 0
-    
-    # Calculate percentage of verified skills
-    verification_percentage = len(verified_skills) / total_skills if total_skills > 0 else 0
-    
-    # Convert to score out of 100
-    score = verification_percentage * 100
-    
-    return score
+        return 0.0
+    return float((len(verified_skills) / total_skills) * 100)
+
 
 def calculate_projects_score(verified_projects: List[str], unverified_projects: List[str]) -> float:
-    """Calculate projects score"""
-    # If no projects, return 0
+    """Calculate projects verification percentage."""
     total_projects = len(verified_projects) + len(unverified_projects)
     if total_projects == 0:
-        return 0
-    
-    # Calculate percentage of verified projects
-    verification_percentage = len(verified_projects) / total_projects if total_projects > 0 else 0
-    
-    # Convert to score out of 100
-    score = verification_percentage * 100
-    
-    return score
+        return 0.0
+    return float((len(verified_projects) / total_projects) * 100)
