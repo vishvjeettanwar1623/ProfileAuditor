@@ -8,6 +8,8 @@ services:
     environment:
       - PORT=8000
       # Add other environment variables as needed
+      # - OPENROUTER_API_KEY=your_openrouter_api_key_here
+      # - OPENROUTER_MODEL=liquid/lfm-2.5-2.6b:free
       # - GITHUB_TOKEN=your_github_token
       # - TWITTER_BEARER_TOKEN=your_twitter_token
       # - SENDGRID_API_KEY=your_sendgrid_key
