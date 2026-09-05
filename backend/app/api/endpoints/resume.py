@@ -178,3 +178,171 @@ async def export_docx(request: ExportDocxRequest):
         
         return Response(
             content=doc_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate Word document: {str(e)}")
+
+
+@router.get("/{resume_id}", response_model=ResumeData)
+async def get_resume(resume_id: str):
+    """Get parsed resume data"""
+    if resume_id not in resume_storage:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    
+    resume_data = resume_storage[resume_id]
+    
+    # Check if processing is complete
+    if resume_data.get("status") == "processing":
+        return JSONResponse(
+            status_code=202,
+            content={"resume_id": resume_id, "status": "processing", "message": "Resume is still being processed"}
+        )
+    
+    return resume_data
+
+@router.get("/{resume_id}/debug")
+async def debug_resume(resume_id: str):
+    """Debug endpoint to see raw parsed data"""
+    if resume_id not in resume_storage:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    
+    resume_data = resume_storage[resume_id]
+    
+    return {
+        "resume_id": resume_id,
+        "raw_data": resume_data,
+        "projects_count": len(resume_data.get("projects", [])),
+        "skills_count": len(resume_data.get("skills", [])),
+        "projects": resume_data.get("projects", []),
+        "skills": resume_data.get("skills", []),
+        "status": resume_data.get("status", "unknown")
+    }
+
+@router.post("/test/{resume_id}")
+async def create_test_resume(resume_id: str):
+    """Create a test resume for verification testing"""
+    print(f"Creating test resume with ID: {resume_id}")
+    
+    # Create a test resume with the problematic project description to test the fix
+    if resume_id == "test-decentralized-project":
+        resume_storage[resume_id] = {
+            "resume_id": resume_id,
+            "name": "Test User",
+            "email": "test@example.com",
+            "skills": ["Python", "JavaScript", "Blockchain", "Data Analysis"],
+            "projects": [{"name": "A Decentralised Data Sharing and Monetization platform based decentralized platform", "description": "A comprehensive platform for decentralized data sharing and monetization"}],
+            "status": "completed"
+        }
+    else:
+        # Create a standard test resume with skills and projects for verification
+        resume_storage[resume_id] = {
+            "resume_id": resume_id,
+            "name": "Test User",
+            "email": "test@example.com",
+            "skills": ["Python", "JavaScript", "Leadership", "Community Management"],
+            "projects": [{"name": "Resume Parser", "description": "AI-powered resume parsing system"}, {"name": "Personal Website", "description": "Portfolio website built with React"}],
+            "status": "completed"
+        }
+    
+    print(f"Test resume created: {resume_storage[resume_id]}")
+    
+    return {"resume_id": resume_id, "message": "Test resume created successfully", "status": "completed"}
+
+def process_resume(resume_id: str, file_path: str, name: Optional[str], email: Optional[str], job_description: Optional[str] = None):
+    """Process the resume file and extract information"""
+    try:
+        # Store initial processing status
+        resume_storage[resume_id] = {"resume_id": resume_id, "status": "processing"}
+        print(f"\n===== PROCESSING RESUME =====\nID: {resume_id}\nFile: {file_path}")
+        print(f"File exists: {os.path.exists(file_path)}")
+        
+        # Ensure file exists
+        if not os.path.exists(file_path):
+            error_msg = f"Resume file not found at {file_path}"
+            print(f"File not found: {file_path}")
+            resume_storage[resume_id] = {"resume_id": resume_id, "status": "error", "error": error_msg}
+            return
+        
+        # Parse the resume
+        print(f"Parsing resume file: {file_path}")
+        parsed_data, raw_text = parse_resume_with_text(file_path)
+        print(f"Parsed data: {parsed_data}")
+        
+        # Ensure parsed_data is a dictionary
+        if not isinstance(parsed_data, dict):
+            error_msg = f"Invalid resume data format: {type(parsed_data)}"
+            print(error_msg)
+            resume_storage[resume_id] = {"resume_id": resume_id, "status": "error", "error": error_msg}
+            return
+        
+        # Quick heuristic to detect non-resume uploads
+        try:
+            text = (raw_text or "").lower()
+            signals = 0
+            if parsed_data.get("email"): signals += 1
+            if parsed_data.get("phone"): signals += 1
+            if parsed_data.get("skills"): signals += 1
+            if parsed_data.get("education"): signals += 1
+            if parsed_data.get("experience"): signals += 1
+            if parsed_data.get("projects"): signals += 1
+            # Look for common resume section keywords
+            keywords = ["experience", "work experience", "education", "skills", "projects", "summary", "objective", "certifications"]
+            if any(k in text for k in keywords):
+                signals += 1
+            # If very weak signals and short text, consider not a resume
+            if signals <= 1 or (len(text) < 300 and signals <= 2):
+                error_msg = "This is not a resume"
+                resume_storage[resume_id] = {"resume_id": resume_id, "status": "error", "error": error_msg}
+                print(f"Heuristic rejection: {error_msg}")
+                return
+        except Exception as _:
+            pass
+        
+        # Add additional information
+        if name:
+            parsed_data["name"] = name
+        if email:
+            parsed_data["email"] = email
+        if job_description:
+            parsed_data["job_description"] = job_description
+        if raw_text:
+            parsed_data["raw_text"] = raw_text
+        
+        # Ensure technical_skills and soft_skills exist and are properly formatted
+        if not parsed_data.get("technical_skills") and parsed_data.get("skills"):
+            parsed_data["technical_skills"] = parsed_data.get("skills", [])
+        if "soft_skills" not in parsed_data:
+            parsed_data["soft_skills"] = []
+        if not parsed_data.get("skills"):
+            parsed_data["skills"] = parsed_data.get("technical_skills", [])
+        
+        # Keep projects as-is; do not inject default project.
+        if "projects" not in parsed_data or not isinstance(parsed_data["projects"], list):
+            parsed_data["projects"] = []
+        
+        # Update storage with parsed data
+        parsed_data["resume_id"] = resume_id
+        parsed_data["status"] = "completed"
+        resume_storage[resume_id] = parsed_data
+        print(f"Resume processed successfully: {resume_id}")
+        print(f"Final resume data structure: {parsed_data}")
+        
+        # Clean up temporary file
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            
+    except Exception as e:
+        error_msg = f"Error processing resume: {str(e)}"
+        print(error_msg)
+        # Update storage with error
+        resume_storage[resume_id] = {
+            "resume_id": resume_id,
+            "status": "error",
+            "error": str(e)
+        }
+        
+        # Clean up temporary file
+        if os.path.exists(file_path):
+            os.remove(file_path)
