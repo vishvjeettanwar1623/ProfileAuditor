@@ -1,832 +1,1013 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
 
 function ResultsPage() {
   const { resumeId } = useParams();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
   const [verificationStatus, setVerificationStatus] = useState('pending');
   const [score, setScore] = useState(null);
   const [verificationData, setVerificationData] = useState(null);
   const [resumeData, setResumeData] = useState(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const [maxRetries] = useState(100); // Increased retry limit to prevent timeout issues
-  
-  // Create refs for functions to break circular dependencies
-  const functionsRef = useRef({});
-  const timeoutRef = useRef(null); // To track and clear timeouts
-  
-  // Function to fetch score
-  const fetchScore = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/score/${resumeId}`);
-      setScore(response.data);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching score:', error);
-      setError('Error fetching score. Please try again.');
-      setLoading(false);
-    }
-  }, [resumeId, setScore, setError, setLoading]);
-  
-  // Function to check verification status
-  const checkVerificationStatus = useCallback(async () => {
-    try {
-      // Stop if there's already an error
-      if (error) {
-        setLoading(false);
-        return;
-      }
 
-      const response = await axios.get(`${API_BASE_URL}/api/verification/${resumeId}`);
-      setVerificationData(response.data);
-      
-      if (response.data.status === 'completed') {
-        setVerificationStatus('completed');
-        
-        // Clear social media usernames from localStorage once verification is complete
-        localStorage.removeItem('github_username');
-        localStorage.removeItem('twitter_username');
-        localStorage.removeItem('linkedin_username');
-        console.log('Cleared social media usernames from localStorage');
-        
-        // Fetch score once verification is complete
-        try {
-          const scoreResponse = await axios.get(`${API_BASE_URL}/api/score/${resumeId}`);
-          console.log('Score data received:', scoreResponse.data);
-          console.log('Projects in score data:', scoreResponse.data.verified_projects);
-          console.log('Unverified projects in score data:', scoreResponse.data.unverified_projects);
-          console.log('Full breakdown:', scoreResponse.data.breakdown);
-          setScore(scoreResponse.data);
-          setLoading(false);
-        } catch (scoreError) {
-          console.error('Error fetching score after verification completed:', scoreError);
-          
-          // If score is still processing (202), retry after a delay
-          if (scoreError.response?.status === 202) {
-            console.log('Score calculation still in progress, will retry...');
-            setTimeout(() => {
-              checkVerificationStatus(); // This will retry score fetching
-            }, 3000);
-          } else {
-            setError('Error fetching score. Please try again.');
-            setLoading(false);
-          }
-        }
-      } else if (response.data.status === 'error') {
-        setVerificationStatus('error');
-        
-        // Clear social media usernames from localStorage on error as well
-        localStorage.removeItem('github_username');
-        localStorage.removeItem('twitter_username');
-        localStorage.removeItem('linkedin_username');
-        console.log('Cleared social media usernames from localStorage due to verification error');
-        
-        // Provide a more user-friendly error message
-        let errorMsg = response.data.error || 'Unknown error';
-        
-        // Handle error object that might be stringified incorrectly
-        try {
-          if (typeof errorMsg === 'object') {
-            errorMsg = JSON.stringify(errorMsg);
-          }
-        } catch (e) {
-          console.error('Error parsing error message:', e);
-        }
-        
-        if (errorMsg.includes('GitHub API') || errorMsg.includes('rate limit')) {
-          setError('GitHub verification failed. This could be due to API rate limits. Please try again later.');
-        } else if (errorMsg.includes('Twitter API')) {
-          setError('Twitter verification failed. This could be due to API issues. Please try again later.');
-        } else if (errorMsg.includes('LinkedIn API')) {
-          setError('LinkedIn verification failed. This could be due to API issues. Please try again later.');
-        } else if (errorMsg.includes('Invalid username')) {
-          setError('Verification failed: One or more social media usernames appear to be invalid. Please check and try again.');
-        } else if (errorMsg.includes('[object Object]') || errorMsg === '[object Object]') {
-          setError('Verification failed: There was an issue with the social media usernames provided. Please check and try again with valid usernames.');
-        } else {
-          setError('Verification failed: ' + errorMsg);
-        }
-        setLoading(false);
-      } else {
-        // If still processing, check again in 1 second (reduced from 3 seconds for faster checking)
-        timeoutRef.current = setTimeout(() => functionsRef.current.checkVerificationStatus(), 1000);
-      }
-    } catch (error) {
-      console.error('Error checking verification status:', error);
-      // Provide more detailed error message based on the response
-      if (error.response) {
-        const statusCode = error.response.status;
-        const errorDetail = error.response.data?.detail || '';
-        
-        if (statusCode === 404) {
-          setError('Verification results not found. Please try uploading your resume again.');
-          setLoading(false);
-        } else {
-          // Handle error object that might be stringified incorrectly
-          let errorMessage = 'Please try again.';
-          try {
-            if (typeof errorDetail === 'object') {
-              errorMessage = JSON.stringify(errorDetail);
-            } else {
-              errorMessage = errorDetail || 'Please try again.';
-            }
-          } catch (e) {
-            console.error('Error parsing error detail:', e);
-          }
-          setError(`Error checking verification status: ${errorMessage}`);
-          setLoading(false);
-        }
-      } else if (error.request) {
-        // The request was made but no response was received
-        setError('No response from verification service. Please check your connection and try again.');
-        setLoading(false);
-      } else {
-        // Something happened in setting up the request
-        setError(`Error checking verification status: ${error.message || 'Please try again.'}`);
-        setLoading(false);
-      }
-    }
-  }, [resumeId, setVerificationData, setVerificationStatus, setError, setLoading, setScore, error]);
-  
-  // Fetch parsed resume data
-  const fetchResumeData = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/resume/${resumeId}`);
-      // If processing, return null so caller can retry later
-      if (response.status === 202 || response.data.status === 'processing') {
-        return null;
-      }
-      
-      // If the resume processing resulted in an error (e.g., not a resume)
-      if (response.data.status === 'error') {
-        setError(response.data.error || 'Error processing file');
-        setLoading(false);
-        return 'error'; // Return 'error' instead of null to signal an error state
-      }
-      
-      setResumeData(response.data);
-      return response.data;
-    } catch (err) {
-      // Handle specific error cases
-      if (err.response) {
-        const statusCode = err.response.status;
-        if (statusCode === 404) {
-          // Resume not found - stop retrying
-          setError('Resume not found. Please upload your resume again.');
-          setLoading(false);
-          return 'error';
-        }
-      }
-      // For other errors, return null to allow retry
-      return null;
-    }
-  }, [resumeId, setError, setLoading]);
-  
-  // Start verification if not already started
-  const startVerification = useCallback(async () => {
-    try {
-      // Check retry limit
-      if (retryCount >= maxRetries) {
-        setError('Maximum retry attempts reached. Please refresh the page or upload your resume again.');
-        setLoading(false);
-        return;
-      }
-
-      // Stop if there's already an error
-      if (error) {
-        setLoading(false);
-        return;
-      }
-
-      // Ensure resume data is available so we can extract profiles from it
-      let data = resumeData;
-      if (!data) {
-        data = await fetchResumeData();
-        if (!data) {
-          // Resume still processing; retry shortly but increment counter
-          setRetryCount(prev => prev + 1);
-          timeoutRef.current = setTimeout(() => functionsRef.current.startVerification(), 1000);
-          return;
-        }
-        if (data === 'error') {
-          // Error occurred (e.g., not a resume), stop processing
-          return;
-        }
-      }
-
-      // Reset retry count on successful data fetch
-      setRetryCount(0);
-
-      // Build social usernames with priority: URL > localStorage > extracted from resume
-      const urlParams = new URLSearchParams(window.location.search);
-      const socialData = {
-        github_username:
-          urlParams.get('github') ||
-          localStorage.getItem('github_username') ||
-          data.github_username || null,
-        twitter_username:
-          urlParams.get('twitter') ||
-          localStorage.getItem('twitter_username') ||
-          data.twitter_username || null,
-        linkedin_username:
-          urlParams.get('linkedin') ||
-          localStorage.getItem('linkedin_username') ||
-          data.linkedin_username || null,
-      };
-
-      console.log('Sending verification request with social data (resolved):', socialData);
-      await axios.post(`${API_BASE_URL}/api/verification/${resumeId}`, socialData);
-      // Start checking verification status
-      checkVerificationStatus();
-    } catch (error) {
-      console.error('Error starting verification:', error);
-      // Provide more detailed error message based on the response
-      if (error.response) {
-        const statusCode = error.response.status;
-        const errorDetail = error.response.data?.detail || '';
-
-        if (statusCode === 400) {
-          if (errorDetail.includes('Resume data incomplete')) {
-            setError('Your resume could not be verified because it lacks sufficient information. Please ensure your resume includes skills and projects.');
-          } else if (errorDetail.toLowerCase().includes('processing')) {
-            // Wait a moment and try again but with retry limit
-            if (retryCount < maxRetries) {
-              setRetryCount(prev => prev + 1);
-              timeoutRef.current = setTimeout(() => functionsRef.current.startVerification(), 2000);
-            } else {
-              setError('Resume processing is taking too long. Please try again.');
-              setLoading(false);
-            }
-            return;
-          } else {
-            setError(`Verification error: ${errorDetail}`);
-          }
-        } else if (statusCode === 404) {
-          setError('Resume not found. Please upload your resume again.');
-        } else {
-          // Handle error object that might be stringified incorrectly
-          let errorMessage = 'Please try again.';
-          try {
-            if (typeof errorDetail === 'object') {
-              errorMessage = JSON.stringify(errorDetail);
-            } else {
-              errorMessage = errorDetail || 'Please try again.';
-            }
-          } catch (e) {
-            console.error('Error parsing error detail:', e);
-          }
-          setError(`Error starting verification: ${errorMessage}`);
-        }
-      } else if (error.request) {
-        // The request was made but no response was received
-        setError('No response from verification service. Please check your connection and try again.');
-      } else {
-        // Something happened in setting up the request that triggered an Error
-        setError(`Error connecting to verification service: ${error.message || 'Please try again later.'}`);
-      }
-      setLoading(false);
-    }
-  }, [resumeId, resumeData, fetchResumeData, checkVerificationStatus, setError, setLoading, retryCount, maxRetries, error]);
-  
-  // Store function references in the ref
+  // Main linear audit pipeline
   useEffect(() => {
-    functionsRef.current = {
-      checkVerificationStatus,
-      fetchScore,
-      startVerification
+    let isMounted = true;
+    let pollTimeout = null;
+
+    const runAuditPipeline = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // 1. Fetch parsed resume data
+        const resumeRes = await axios.get(`${API_BASE_URL}/api/resume/${resumeId}`);
+        if (!isMounted) return;
+
+        if (resumeRes.status === 202 || resumeRes.data.status === 'processing') {
+          // Still processing, poll in 1.2s
+          pollTimeout = setTimeout(runAuditPipeline, 1200);
+          return;
+        }
+
+        if (resumeRes.data.status === 'error') {
+          setError(resumeRes.data.error || 'Failed to parse resume');
+          setLoading(false);
+          return;
+        }
+
+        const parsedResume = resumeRes.data;
+        setResumeData(parsedResume);
+
+        // 2. Check if verification was already executed
+        let isAlreadyDone = false;
+        try {
+          const verCheck = await axios.get(`${API_BASE_URL}/api/verification/${resumeId}`);
+          if (!isMounted) return;
+          if (verCheck.data && verCheck.data.status === 'completed') {
+            setVerificationData(verCheck.data);
+            setVerificationStatus('completed');
+            isAlreadyDone = true;
+          }
+        } catch (_) {
+          // 404 is expected on first run before verification is started
+        }
+
+        // 3. If not already verified, start verification POST
+        if (!isAlreadyDone) {
+          const urlParams = new URLSearchParams(window.location.search);
+          const handles = {
+            github_username:
+              urlParams.get('github') ||
+              localStorage.getItem('github_username') ||
+              parsedResume.github_username ||
+              null,
+            leetcode_username:
+              urlParams.get('leetcode') ||
+              localStorage.getItem('leetcode_username') ||
+              parsedResume.leetcode_username ||
+              null,
+          };
+
+          await axios.post(`${API_BASE_URL}/api/verification/${resumeId}`, handles);
+          if (!isMounted) return;
+
+          const verResult = await axios.get(`${API_BASE_URL}/api/verification/${resumeId}`);
+          if (!isMounted) return;
+          setVerificationData(verResult.data);
+          setVerificationStatus('completed');
+        }
+
+        // 4. Fetch Reality Score
+        const scoreRes = await axios.get(`${API_BASE_URL}/api/score/${resumeId}`);
+        if (!isMounted) return;
+        setScore(scoreRes.data);
+        setLoading(false);
+
+        // Clear overrides from local storage
+        localStorage.removeItem('github_username');
+        localStorage.removeItem('leetcode_username');
+
+      } catch (err) {
+        if (!isMounted) return;
+        console.error('Audit pipeline error:', err);
+        let msg = 'Failed to complete candidate verification audit.';
+        if (err.response?.data?.detail) {
+          msg = typeof err.response.data.detail === 'string' ? err.response.data.detail : JSON.stringify(err.response.data.detail);
+        } else if (err.message) {
+          msg = err.message;
+        }
+        setError(msg);
+        setLoading(false);
+      }
     };
-  }, [checkVerificationStatus, fetchScore, startVerification]);
-  
-  // Start verification when resumeId changes
-  useEffect(() => {
-    startVerification();
-    
-    // Cleanup function
+
+    runAuditPipeline();
+
     return () => {
-      // Clear any pending timeouts if component unmounts
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      // Also clear localStorage on unmount to ensure clean state
-      localStorage.removeItem('github_username');
-      localStorage.removeItem('twitter_username');
-      localStorage.removeItem('linkedin_username');
-      console.log('Cleared social media usernames from localStorage on component unmount');
+      isMounted = false;
+      if (pollTimeout) clearTimeout(pollTimeout);
     };
-  }, [resumeId, startVerification]);
-  
-  // Clear timeouts when error occurs to prevent infinite loops
-  useEffect(() => {
-    if (error && timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-      console.log('Cleared timeout due to error:', error);
-    }
-  }, [error]);
-  
-  // Function to render score gauge
-  const renderScoreGauge = (score) => {
-    let scoreColor = 'text-red-500';
-    if (score >= 70) {
-      scoreColor = 'text-green-500';
-    } else if (score >= 40) {
-      scoreColor = 'text-yellow-500';
-    }
-    
-    return (
-      <div className="flex flex-col items-center">
-        <div className="relative w-48 h-48">
-          <svg className="w-full h-full" viewBox="0 0 100 100">
-            {/* Background circle */}
-            <circle
-              cx="50"
-              cy="50"
-              r="45"
-              fill="none"
-              stroke="#e6e6e6"
-              strokeWidth="10"
-            />
-            {/* Score circle */}
-            <circle
-              cx="50"
-              cy="50"
-              r="45"
-              fill="none"
-              stroke={scoreColor.replace('text-', 'bg-').replace('-500', '-400')}
-              strokeWidth="10"
-              strokeDasharray={`${score * 2.83} 283`}
-              strokeDashoffset="0"
-              transform="rotate(-90 50 50)"
-            />
-            <text
-              x="50"
-              y="50"
-              dominantBaseline="middle"
-              textAnchor="middle"
-              className={`${scoreColor} font-bold text-3xl`}
-            >
-              {Math.round(score)}
-            </text>
-            <text
-              x="50"
-              y="65"
-              dominantBaseline="middle"
-              textAnchor="middle"
-              className="text-gray-500 text-sm"
-            >
-              out of 100
-            </text>
-          </svg>
-        </div>
-        <h3 className="mt-4 text-xl font-bold">Reality Score</h3>
-      </div>
-    );
-  };
-  
-  // Profile details section extracted from resume
-  const renderProfileSection = () => {
-    if (!resumeData) return null;
-    const { name, email, github_username, twitter_username, linkedin_username } = resumeData || {};
+  }, [resumeId]);
 
-    const hasAny = name || email || github_username || twitter_username || linkedin_username;
-    if (!hasAny) return null;
-
-    const linkItem = (label, value, hrefBase) => (
-      value ? (
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-500 w-28">{label}</span>
-          {hrefBase ? (
-            <a
-              href={`${hrefBase}${value}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-primary-600 hover:text-primary-700 underline break-all"
-            >
-              {value}
-            </a>
-          ) : (
-            <span className="text-sm text-gray-900 break-all">{value}</span>
-          )}
-        </div>
-      ) : null
-    );
-
-    return (
-      <div className="mt-6 bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:px-6 bg-gray-50">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Profile Details</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">Extracted from the uploaded resume</p>
-        </div>
-        <div className="px-4 py-5 sm:p-6 space-y-2">
-          {name && (
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-500 w-28">Name</span>
-              <span className="text-sm text-gray-900 break-all">{name}</span>
-            </div>
-          )}
-          {email && (
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-500 w-28">Email</span>
-              <span className="text-sm text-gray-900 break-all">{email}</span>
-            </div>
-          )}
-          {linkItem('GitHub', github_username, 'https://github.com/')}
-          {linkItem('Twitter', twitter_username, 'https://twitter.com/')}
-          {linkItem('LinkedIn', linkedin_username, 'https://linkedin.com/in/')}
-        </div>
-      </div>
-    );
-  };
-  
-  // Function to render verification results
-  const renderVerificationResults = () => {
-    if (!verificationData || !score) {
-      console.log('Missing data for verification results:', { verificationData, score });
-      return null;
+  const getScoreMeta = (scoreVal) => {
+    if (scoreVal >= 80) {
+      return {
+        label: 'Strong Corroboration',
+        subtext: 'High percentage of technical claims backed by original code and problem-solving records.',
+        strokeColor: '#10B981',
+        textColor: 'text-emerald-400',
+        badgeBg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+      };
     }
-    
-    // Ensure score has the expected properties
-    if (!score.verified_skills || !score.unverified_skills || 
-        !score.verified_projects || !score.unverified_projects) {
-      console.error('Score data is missing required properties:', score);
-      return null;
+    if (scoreVal >= 50) {
+      return {
+        label: 'Moderate Alignment',
+        subtext: 'Core claims corroborated, with some unverified skills or private repositories.',
+        strokeColor: '#F59E0B',
+        textColor: 'text-amber-400',
+        badgeBg: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+      };
     }
-    
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
-        {/* Skills section */}
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6 bg-gray-50">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Skills Verification</h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              {score.verified_skills.length} of {score.verified_skills.length + score.unverified_skills.length} skills verified
-            </p>
-          </div>
-          <div className="border-t border-gray-200">
-            <dl>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Verified Skills</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {score.verified_skills.length > 0 ? (
-                    <ul className="border border-gray-200 rounded-md divide-y divide-gray-200">
-                      {score.verified_skills.map((skill, index) => (
-                        <li key={index} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
-                          <div className="w-0 flex-1 flex items-center">
-                            <svg className="flex-shrink-0 h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            <span className="ml-2 flex-1 w-0 truncate">{skill}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-gray-500">No verified skills found</p>
-                  )}
-                </dd>
-              </div>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Unverified Skills</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {score.unverified_skills.length > 0 ? (
-                    <ul className="border border-gray-200 rounded-md divide-y divide-gray-200">
-                      {score.unverified_skills.map((skill, index) => (
-                        <li key={index} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
-                          <div className="w-0 flex-1 flex items-center">
-                            <svg className="flex-shrink-0 h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                            </svg>
-                            <span className="ml-2 flex-1 w-0 truncate">{skill}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-gray-500">No unverified skills found</p>
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
-        
-        {/* Projects section */}
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6 bg-gray-50">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Projects Verification</h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              {score.verified_projects.length} of {score.verified_projects.length + score.unverified_projects.length} projects verified
-            </p>
-          </div>
-          <div className="border-t border-gray-200">
-            <dl>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Verified Projects</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {score.verified_projects.length > 0 ? (
-                    <ul className="border border-gray-200 rounded-md divide-y divide-gray-200">
-                      {score.verified_projects.map((project, index) => (
-                        <li key={index} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
-                          <div className="w-0 flex-1 flex items-center">
-                            <svg className="flex-shrink-0 h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            <span className="ml-2 flex-1 w-0 truncate">{project}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-gray-500">No verified projects found</p>
-                  )}
-                </dd>
-              </div>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Unverified Projects</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {score.unverified_projects.length > 0 ? (
-                    <ul className="border border-gray-200 rounded-md divide-y divide-gray-200">
-                      {score.unverified_projects.map((project, index) => (
-                        <li key={index} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
-                          <div className="w-0 flex-1 flex items-center">
-                            <svg className="flex-shrink-0 h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                            </svg>
-                            <span className="ml-2 flex-1 w-0 truncate">{project}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-gray-500">No unverified projects found</p>
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
-      </div>
-    );
+    return {
+      label: 'Low Verifiability',
+      subtext: 'Significant gap between resume claims and discoverable public codebases.',
+      strokeColor: '#EF4444',
+      textColor: 'text-red-400',
+      badgeBg: 'bg-red-500/10 text-red-400 border-red-500/20',
+    };
   };
-  
-  // Function to render score breakdown
-  const renderScoreBreakdown = () => {
-    if (!score) return null;
-    
-    const { breakdown } = score;
-    
-    return (
-      <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:px-6 bg-gray-50">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Score Breakdown</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Detailed breakdown of the Reality Score
-          </p>
-        </div>
-        <div className="border-t border-gray-200">
-          <dl>
-            <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">GitHub Score</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${breakdown.github_score}%` }}></div>
-                </div>
-                <span className="text-sm text-gray-500">{Math.round(breakdown.github_score)}%</span>
-              </dd>
-            </div>
-            <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Twitter Score</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-blue-400 h-2.5 rounded-full" style={{ width: `${breakdown.twitter_score}%` }}></div>
-                </div>
-                <span className="text-sm text-gray-500">{Math.round(breakdown.twitter_score)}%</span>
-              </dd>
-            </div>
-            <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">LinkedIn Score</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-blue-300 h-2.5 rounded-full" style={{ width: `${breakdown.linkedin_score}%` }}></div>
-                </div>
-                <span className="text-sm text-gray-500">{Math.round(breakdown.linkedin_score)}%</span>
-              </dd>
-            </div>
-            <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Skills Score</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-green-500 h-2.5 rounded-full" style={{ width: `${breakdown.skills_score}%` }}></div>
-                </div>
-                <span className="text-sm text-gray-500">{Math.round(breakdown.skills_score)}%</span>
-              </dd>
-            </div>
-            <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Projects Score</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-green-400 h-2.5 rounded-full" style={{ width: `${breakdown.projects_score}%` }}></div>
-                </div>
-                <span className="text-sm text-gray-500">{Math.round(breakdown.projects_score)}%</span>
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </div>
-    );
-  };
-  
-  // SendInvitation component to handle invitation functionality
-  const SendInvitation = ({ resumeId, score }) => {
+
+  // Sub-component: Send Invitation Email
+  const SendInvitationModule = ({ scoreData }) => {
     const [sending, setSending] = useState(false);
     const [inviteStatus, setInviteStatus] = useState(null);
-    
-    const sendInvitation = async () => {
+    const [interviewDate, setInterviewDate] = useState('');
+    const [interviewLocation, setInterviewLocation] = useState('Google Meet');
+    const [customMessage, setCustomMessage] = useState(
+      `Hello, based on your audited profile (Reality Score: ${Math.round(scoreData?.score || 0)}/100), we would like to invite you for a technical interview.`
+    );
+
+    const handleSend = async (e) => {
+      e.preventDefault();
       setSending(true);
+      setInviteStatus(null);
       try {
-        const response = await axios.post(`${API_BASE_URL}/api/invite/${resumeId}`, {
-          message: "Congratulations! Based on your resume analysis, we would like to invite you for an interview.",
-          interview_date: null,
-          interview_location: null
+        await axios.post(`${API_BASE_URL}/api/invite/${resumeId}`, {
+          message: customMessage,
+          interview_date: interviewDate || null,
+          interview_location: interviewLocation || null,
         });
         setInviteStatus({
           success: true,
-          message: 'Invitation sent successfully!'
+          message: 'Invitation email dispatched successfully.'
         });
-      } catch (error) {
-        console.error('Error sending invitation:', error);
-        
-        // Handle different error response formats
-        let errorMessage = 'Error sending invitation. Please try again.';
-        
-        if (error.response?.data) {
-          const errorData = error.response.data;
-          
-          // Handle FastAPI validation errors (array of error objects)
-          if (Array.isArray(errorData.detail)) {
-            errorMessage = errorData.detail.map(err => {
-              if (typeof err === 'object' && err.msg) {
-                return err.msg;
-              }
-              return String(err);
-            }).join(', ');
-          }
-          // Handle simple string detail
-          else if (typeof errorData.detail === 'string') {
-            errorMessage = errorData.detail;
-          }
-          // Handle object detail
-          else if (typeof errorData.detail === 'object') {
-            errorMessage = JSON.stringify(errorData.detail);
-          }
-          // Handle direct message
-          else if (errorData.message) {
-            errorMessage = errorData.message;
-          }
+      } catch (err) {
+        console.error('Error sending invitation:', err);
+        let errorMsg = 'Failed to dispatch email. Check SMTP configuration in backend/.env.';
+        if (err.response?.data?.detail) {
+          errorMsg = typeof err.response.data.detail === 'string' 
+            ? err.response.data.detail 
+            : JSON.stringify(err.response.data.detail);
         }
-        
         setInviteStatus({
           success: false,
-          message: errorMessage
+          message: errorMsg
         });
       } finally {
         setSending(false);
       }
     };
-    
+
     return (
-      <div className="mt-8 flex flex-col items-center">
-        <button
-          onClick={sendInvitation}
-          disabled={sending || !score || score.score < 70}
-          className={`px-4 py-2 rounded-md text-white font-medium ${score && score.score >= 70 ? 'bg-primary-600 hover:bg-primary-700' : 'bg-gray-400 cursor-not-allowed'}`}
-        >
-          {sending ? 'Sending...' : 'Send Interview Invitation'}
-        </button>
-        
-        {score && score.score < 70 && (
-          <p className="mt-2 text-sm text-gray-500">
-            Candidate must have a Reality Score of at least 70 to receive an invitation.
-          </p>
-        )}
-        
-        {inviteStatus && (
-          <div className={`mt-4 p-4 rounded-md ${inviteStatus.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-            {typeof inviteStatus.message === 'string' ? inviteStatus.message : 'An error occurred while sending the invitation.'}
+      <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 sm:p-8 mt-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#1F242D]">
+          <div>
+            <h3 className="text-base font-bold text-white">Send Candidate Interview Invitation</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Dispatch an official technical interview invitation directly to the candidate email.
+            </p>
           </div>
-        )}
+          <div className="text-xs text-slate-300 font-mono bg-[#161A20] px-3 py-1.5 rounded-lg border border-[#262C36]">
+            {resumeData?.email || 'No email extracted'}
+          </div>
+        </div>
+
+        <form onSubmit={handleSend} className="pt-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Suggested Date & Time</label>
+              <input
+                type="text"
+                placeholder="e.g. Tomorrow at 2:00 PM EST"
+                value={interviewDate}
+                onChange={(e) => setInterviewDate(e.target.value)}
+                className="w-full text-xs px-3 py-2 rounded-lg bg-[#161A20] text-white border border-[#262C36] focus:outline-none focus:border-white placeholder-slate-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Location / Video Link</label>
+              <input
+                type="text"
+                value={interviewLocation}
+                onChange={(e) => setInterviewLocation(e.target.value)}
+                className="w-full text-xs px-3 py-2 rounded-lg bg-[#161A20] text-white border border-[#262C36] focus:outline-none focus:border-white placeholder-slate-600"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Message Content</label>
+            <textarea
+              rows={3}
+              value={customMessage}
+              onChange={(e) => setCustomMessage(e.target.value)}
+              className="w-full text-xs p-3 rounded-lg bg-[#161A20] text-white border border-[#262C36] focus:outline-none focus:border-white"
+            />
+          </div>
+
+          {inviteStatus && (
+            <div className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
+              inviteStatus.success
+                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                : 'bg-red-950/40 border-red-800/60 text-red-300'
+            }`}>
+              <span className="font-bold">•</span>
+              <span>{inviteStatus.message}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
+            <p className="text-[11px] text-slate-500">
+              Sends via configured Gmail SMTP credentials.
+            </p>
+
+            <button
+              type="submit"
+              disabled={sending}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold text-[#090A0C] bg-white hover:bg-slate-200 disabled:opacity-50 transition-all active:scale-[0.98] shadow-sm"
+            >
+              {sending ? 'Sending...' : 'Dispatch Invitation'}
+            </button>
+          </div>
+        </form>
       </div>
     );
   };
-  
-  return (
-    <div className="max-w-7xl mx-auto">
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
-          Resume Verification Results
-        </h1>
-        <p className="mt-4 text-lg text-gray-500">
-          See how well the resume claims match with online activity.
+
+  // Main Loading View
+  if (loading) {
+    return (
+      <div className="max-w-md mx-auto py-20 text-center space-y-4">
+        <div className="w-10 h-10 rounded-full border-2 border-white border-t-transparent animate-spin mx-auto mb-2" />
+        <h2 className="text-xl font-bold text-white tracking-tight">Auditing Candidate Footprint</h2>
+        <p className="text-xs text-slate-400">
+          {verificationStatus === 'pending'
+            ? 'Querying GitHub repositories & LeetCode profile...'
+            : 'Evaluating authentic code ownership & computing Reality Score...'}
         </p>
       </div>
-      
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-12">
-          <svg className="animate-spin h-12 w-12 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <p className="mt-4 text-lg text-gray-500">
-            {verificationStatus === 'pending' ? 'Starting verification...' : 'Verifying resume claims...'}
-          </p>
-        </div>
-      ) : error ? (
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg max-w-2xl mx-auto">
-          <div className="px-4 py-5 sm:px-6 bg-red-50">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg className="h-6 w-6 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <h3 className="ml-3 text-lg font-medium text-red-800">
-                {error === "This is not a resume" ? "File Error" : "Verification Error"}
-              </h3>
-            </div>
+    );
+  }
+
+  // Error View
+  if (error) {
+    return (
+      <div className="max-w-md mx-auto py-12">
+        <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 text-center space-y-4">
+          <div className="w-10 h-10 rounded-full bg-red-950/40 border border-red-800/50 flex items-center justify-center text-red-400 mx-auto font-bold">
+            !
           </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-            <div className="text-sm text-gray-700 mb-6">
-              <p className="mb-4">{error}</p>
-              {error !== "This is not a resume" && (
-                <>
-                  <p>This could be due to:</p>
-                  <ul className="list-disc pl-5 mt-2 space-y-1">
-                    <li>Missing or incomplete information in your resume</li>
-                    <li>Issues with the verification service</li>
-                    <li>Temporary API limitations</li>
-                  </ul>
-                </>
-              )}
-            </div>
-            
-            <div className="mt-6 flex flex-col sm:flex-row sm:space-x-4 space-y-3 sm:space-y-0">
-              <Link
-                to="/upload"
-                className="inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-              >
-                Upload New Resume
-              </Link>
-              {error !== "This is not a resume" && (
-                <button
-                  onClick={() => {
-                    console.log('Try Again button clicked');
-                    
-                    setError('');
-                    setLoading(true);
-                    setVerificationStatus('pending');
-                    setVerificationData(null);
-                    setScore(null);
-                    startVerification();
-                  }}
-                  className="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                >
-                  Try Again
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div>
-          {/* Score gauge */}
-          <div className="flex justify-center">
-            {score && renderScoreGauge(score.score)}
-          </div>
-          
-          {/* Verification results */}
-          {renderVerificationResults()}
-          
-          {/* Score breakdown */}
-          {renderScoreBreakdown()}
-          
-          {/* Send invitation */}
-          <SendInvitation resumeId={resumeId} score={score} />
-          
-          {/* Back to upload button */}
-          <div className="mt-8 text-center">
+          <h2 className="text-lg font-bold text-white">Verification Notice</h2>
+          <p className="text-xs text-slate-400">{error}</p>
+
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-lg bg-white hover:bg-slate-200 text-[#090A0C] text-xs font-semibold shadow-sm transition-all"
+            >
+              Retry Audit
+            </button>
             <Link
               to="/upload"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md text-primary-700 bg-primary-100 hover:bg-primary-200"
+              className="px-4 py-2 rounded-lg bg-[#161A20] hover:bg-[#1E232B] text-slate-300 text-xs font-semibold border border-[#262C36] transition-all"
             >
               Upload Another Resume
             </Link>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  const realityScore = score?.score ? Math.round(score.score) : 0;
+  const scoreMeta = getScoreMeta(realityScore);
+  const candidateName = resumeData?.name || 'Candidate Report';
+  const candidateEmail = resumeData?.email || 'No email specified';
+  const githubUser = resumeData?.github_username || verificationData?.github_username || verificationData?.github?.username;
+  const leetcodeUser = resumeData?.leetcode_username || verificationData?.leetcode_username || verificationData?.leetcode?.username;
+  const breakdown = score?.breakdown || {};
+
+  const verifiedSkills = score?.verified_skills || [];
+  const unverifiedSkills = score?.unverified_skills || [];
+  const softSkills = score?.soft_skills || verificationData?.soft_skills || resumeData?.soft_skills || [];
+  const verifiedProjects = score?.verified_projects || [];
+  const unverifiedProjects = score?.unverified_projects || [];
+
+  const githubData = verificationData?.github || verificationData?.github_results || {};
+  const leetcodeData = verificationData?.leetcode || {};
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6 pt-2">
+      {/* Candidate Header & Reality Score Card */}
+      <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-[#1F242D]">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-lg bg-white text-[#090A0C] flex items-center justify-center font-bold text-base shadow-sm">
+              {candidateName.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-bold text-white tracking-tight">{candidateName}</h1>
+                <span className="text-xs px-2.5 py-0.5 rounded bg-[#161A20] text-slate-200 font-semibold border border-[#262C36] font-mono">
+                  Reality: {realityScore}/100
+                </span>
+                {score?.role_analysis && (
+                  <span className="text-xs px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20 font-mono">
+                    Role Fit: {score.role_analysis.role_fit_score}%
+                  </span>
+                )}
+                {score?.ats_analysis && (
+                  <span className="text-xs px-2.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-semibold border border-blue-500/20 font-mono">
+                    ATS: {score.ats_analysis.ats_score}%
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                {candidateEmail} • ID: AUD-{resumeId.slice(0, 8)}
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons & Verified handles */}
+          <div className="flex flex-wrap items-center gap-2">
+            {githubUser && (
+              <a
+                href={`https://github.com/${githubUser}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-200 transition-colors border border-[#262C36]"
+              >
+                <span className="text-slate-400">GitHub:</span>
+                <span className="font-semibold text-white">@{githubUser}</span>
+              </a>
+            )}
+            {leetcodeUser && (
+              <a
+                href={`https://leetcode.com/u/${leetcodeUser}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-200 transition-colors border border-[#262C36]"
+              >
+                <span className="text-slate-400">LeetCode:</span>
+                <span className="font-semibold text-white">@{leetcodeUser}</span>
+              </a>
+            )}
+            
+            <button
+              onClick={() => window.print()}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-300 border border-[#262C36] transition-all"
+            >
+              Print Report
+            </button>
+
+            <Link
+              to="/upload"
+              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-200 text-[#090A0C] transition-all active:scale-[0.98] shadow-sm"
+            >
+              New Audit
+            </Link>
+          </div>
+        </div>
+
+        {/* Reality Score & Sub-scores Breakdown */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 pt-6 items-center">
+          {/* SVG Radial Gauge */}
+          <div className="md:col-span-4 flex flex-col items-center justify-center p-5 rounded-xl bg-[#161A20] border border-[#262C36] text-center">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Reality Score</span>
+
+            <div className="relative w-36 h-36 my-1">
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="50"
+                  fill="none"
+                  stroke="#1F242D"
+                  strokeWidth="8"
+                />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="50"
+                  fill="none"
+                  stroke={scoreMeta.strokeColor}
+                  strokeWidth="8"
+                  strokeDasharray={`${2 * Math.PI * 50}`}
+                  strokeDashoffset={`${2 * Math.PI * 50 * (1 - realityScore / 100)}`}
+                  strokeLinecap="round"
+                />
+              </svg>
+
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-3xl font-bold text-white leading-none font-mono">
+                  {realityScore}
+                </span>
+                <span className="text-[10px] text-slate-500 mt-0.5 font-mono">/ 100</span>
+              </div>
+            </div>
+
+            <h3 className="font-bold text-white text-sm mt-1">{scoreMeta.label}</h3>
+            <p className="text-[11px] text-slate-400 max-w-xs mt-0.5">{scoreMeta.subtext}</p>
+          </div>
+
+          {/* Sub-scores Progress Bars */}
+          <div className="md:col-span-8 space-y-3.5">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              Verification Breakdown
+            </h3>
+
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-xs font-medium text-slate-300 mb-1.5">
+                  <span>GitHub Code Authenticity</span>
+                  <span className="font-mono">{Math.round(breakdown.github_score || 0)}%</span>
+                </div>
+                <div className="w-full bg-[#1F242D] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-white transition-all" style={{ width: `${Math.min(100, breakdown.github_score || 0)}%` }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-medium text-slate-300 mb-1.5">
+                  <span>Technical Skills Verification</span>
+                  <span className="font-mono">{Math.round(breakdown.skills_score || 0)}%</span>
+                </div>
+                <div className="w-full bg-[#1F242D] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-slate-300 transition-all" style={{ width: `${Math.min(100, breakdown.skills_score || 0)}%` }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-medium text-slate-300 mb-1.5">
+                  <span>Projects Verification</span>
+                  <span className="font-mono">{Math.round(breakdown.projects_score || 0)}%</span>
+                </div>
+                <div className="w-full bg-[#1F242D] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-slate-300 transition-all" style={{ width: `${Math.min(100, breakdown.projects_score || 0)}%` }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-medium text-slate-300 mb-1.5">
+                  <span>LeetCode Problem Solving</span>
+                  <span className="font-mono">{Math.round(breakdown.leetcode_score || 0)}%</span>
+                </div>
+                <div className="w-full bg-[#1F242D] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-slate-400 transition-all" style={{ width: `${Math.min(100, breakdown.leetcode_score || 0)}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Target Role & Job Description Evaluation Card (if provided) */}
+      {score?.role_analysis && (
+        <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#1F242D]">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Target Role Fit: {score.role_analysis.role_title}
+                </h3>
+                <span className="text-xs px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold font-mono">
+                  Role Fit: {score.role_analysis.role_fit_score}%
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Domain: {score.role_analysis.domain_focus} • Verified code evidence evaluated directly against job requirements.
+              </p>
+            </div>
+            <span className="text-xs px-3 py-1 rounded-lg bg-[#161A20] font-bold text-white border border-[#262C36]">
+              {score.role_analysis.verdict}
+            </span>
+          </div>
+
+          {/* Hiring Verdict Banner */}
+          <div className="p-3.5 rounded-xl bg-[#161A20] border border-[#262C36] text-xs text-slate-300 leading-relaxed flex items-start gap-2.5">
+            <span className="text-emerald-400 font-bold text-sm">💡</span>
+            <span>{score.role_analysis.verdict_summary}</span>
+          </div>
+
+          {/* Core Requirements Breakdown Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-1">
+            {/* Verified in Code */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-[#161A20]/60 border border-[#262C36]">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#262C36]">
+                <span className="font-bold text-emerald-400 uppercase tracking-wider text-[10px]">
+                  Verified in Code ({score.role_analysis.verified_requirements.length})
+                </span>
+                <span className="text-emerald-400 font-bold">✓</span>
+              </div>
+              {score.role_analysis.verified_requirements.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {score.role_analysis.verified_requirements.map((req, idx) => (
+                    <span key={idx} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                      ✓ {req}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic py-1">No core requirements verified in code.</p>
+              )}
+            </div>
+
+            {/* Claimed Unverified */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-[#161A20]/60 border border-[#262C36]">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#262C36]">
+                <span className="font-bold text-amber-400 uppercase tracking-wider text-[10px]">
+                  Claimed Unverified ({score.role_analysis.claimed_unverified_requirements.length})
+                </span>
+                <span className="text-amber-400 font-bold">•</span>
+              </div>
+              {score.role_analysis.claimed_unverified_requirements.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {score.role_analysis.claimed_unverified_requirements.map((req, idx) => (
+                    <span key={idx} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                      • {req}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic py-1">All claimed JD skills were verified.</p>
+              )}
+            </div>
+
+            {/* Missing from Resume */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-[#161A20]/60 border border-[#262C36]">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#262C36]">
+                <span className="font-bold text-red-400 uppercase tracking-wider text-[10px]">
+                  Missing from Resume ({score.role_analysis.missing_requirements.length})
+                </span>
+                <span className="text-red-400 font-bold">✗</span>
+              </div>
+              {score.role_analysis.missing_requirements.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {score.role_analysis.missing_requirements.map((req, idx) => (
+                    <span key={idx} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 text-red-300 border border-red-500/30">
+                      ✗ {req}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic py-1">No missing requirements from JD.</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* ATS & Resume Health Evaluation Card */}
+      {score?.ats_analysis && (
+        <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-[#1F242D]">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  ATS & Resume Health Audit
+                </h3>
+                <span className="text-xs px-2.5 py-0.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold font-mono">
+                  ATS Score: {score.ats_analysis.ats_score}%
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Evaluates quantifiable impact metrics, action verb variety, section structure, and formatting readability.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/editor/${resumeId}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-white hover:bg-slate-200 text-[#090A0C] transition-all shadow-sm"
+              >
+                <span>🚀 Optimize in Live Editor</span>
+              </Link>
+              <span className="text-xs px-3 py-1 rounded-lg bg-[#161A20] font-bold text-white border border-[#262C36]">
+                {score.ats_analysis.health_label}
+              </span>
+            </div>
+          </div>
+
+          {/* Sub-breakdown 4 metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+            <div className="p-3 rounded-xl bg-[#161A20] border border-[#262C36]">
+              <span className="text-[10px] text-slate-400 block font-medium">Impact Metrics</span>
+              <span className="text-base font-bold text-white font-mono">{Math.round(score.ats_analysis.sub_scores?.impact_metrics || 0)}%</span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">{score.ats_analysis.metric_count} detected</span>
+            </div>
+            <div className="p-3 rounded-xl bg-[#161A20] border border-[#262C36]">
+              <span className="text-[10px] text-slate-400 block font-medium">Action Verbs</span>
+              <span className="text-base font-bold text-white font-mono">{Math.round(score.ats_analysis.sub_scores?.action_verbs || 0)}%</span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">{score.ats_analysis.action_verbs_count} unique</span>
+            </div>
+            <div className="p-3 rounded-xl bg-[#161A20] border border-[#262C36]">
+              <span className="text-[10px] text-slate-400 block font-medium">Section Completeness</span>
+              <span className="text-base font-bold text-white font-mono">{Math.round(score.ats_analysis.sub_scores?.structure_completeness || 0)}%</span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">ATS Standard</span>
+            </div>
+            <div className="p-3 rounded-xl bg-[#161A20] border border-[#262C36]">
+              <span className="text-[10px] text-slate-400 block font-medium">Length & Format</span>
+              <span className="text-base font-bold text-white font-mono">{Math.round(score.ats_analysis.sub_scores?.formatting_health || 0)}%</span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">{score.ats_analysis.word_count} words</span>
+            </div>
+          </div>
+
+          {/* Diagnostic checks & Recommendations */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1">
+            {/* Passed Checks */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-[#161A20]/60 border border-[#262C36]">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#262C36]">
+                <span className="font-bold text-emerald-400 uppercase tracking-wider text-[10px]">
+                  ATS Passed Diagnostics ({score.ats_analysis.passed_checks?.length || 0})
+                </span>
+                <span className="text-emerald-400 font-bold">✓</span>
+              </div>
+              <ul className="space-y-1.5 pt-1">
+                {score.ats_analysis.passed_checks?.map((check, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-slate-300">
+                    <span className="text-emerald-400 font-bold mt-0.5">✓</span>
+                    <span>{check}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Improvement Recommendations */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-[#161A20]/60 border border-[#262C36]">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#262C36]">
+                <span className="font-bold text-amber-400 uppercase tracking-wider text-[10px]">
+                  Optimization Recommendations ({score.ats_analysis.improvement_tips?.length || 0})
+                </span>
+                <span className="text-amber-400 font-bold">💡</span>
+              </div>
+              {score.ats_analysis.improvement_tips?.length > 0 ? (
+                <ul className="space-y-1.5 pt-1">
+                  {score.ats_analysis.improvement_tips.map((tip, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-slate-300">
+                      <span className="text-amber-400 font-bold mt-0.5">💡</span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[11px] text-slate-500 italic py-1">No major ATS optimizations needed. Excellent structure.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Engineering Signal Cards: Deep GitHub + LeetCode */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Deep GitHub Audit Card */}
+        <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-5 text-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[#1F242D]">
+              <div className="flex items-center gap-2">
+                <span className="font-bold uppercase tracking-wider text-white">GitHub Code Authenticity</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                  Anti-Fork Audit
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[11px] bg-[#161A20] text-slate-300 font-mono border border-[#262C36]">
+                {githubUser ? `@${githubUser}` : 'Not provided'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2.5 mb-3.5 text-center">
+              <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
+                <span className="text-[10px] text-slate-400 block">Original Repos</span>
+                <span className="text-base font-bold text-white font-mono">
+                  {githubData.original_repos?.length || (githubData.repositories?.length ? githubData.repositories.length : 0)}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
+                <span className="text-[10px] text-slate-400 block">Total Stars</span>
+                <span className="text-base font-bold text-white font-mono">
+                  {githubData.total_stars || 0}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
+                <span className="text-[10px] text-slate-400 block">Recent Active</span>
+                <span className="text-base font-bold text-white font-mono">
+                  {githubData.recent_active_repos?.length || (githubData.repositories?.length ? Math.min(githubData.repositories.length, 3) : 0)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between pb-1.5 border-b border-[#1F242D] text-slate-400">
+                <span>Forked / Template Repos</span>
+                <span className="font-semibold text-slate-200 font-mono">{githubData.forked_repos?.length || 0} filtered</span>
+              </div>
+              <div className="flex justify-between pb-1.5 border-b border-[#1F242D] text-slate-400">
+                <span>Authored Contributions</span>
+                <span className="font-semibold text-slate-200 font-mono">{githubData.contributions || 0}+ commits</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block mb-1 font-medium">Authored Languages</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {githubData.languages && githubData.languages.length > 0 ? (
+                    githubData.languages.map((lang, idx) => (
+                      <span key={idx} className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#161A20] text-slate-200 border border-[#262C36]">
+                        {lang}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-slate-500 italic text-[11px]">No language records</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* LeetCode Problem-Solving Card */}
+        <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-5 text-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[#1F242D]">
+              <div className="flex items-center gap-2">
+                <span className="font-bold uppercase tracking-wider text-white">LeetCode Problem Solving</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                  DSA Proof
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[11px] bg-[#161A20] text-slate-300 font-mono border border-[#262C36]">
+                {leetcodeUser ? `@${leetcodeUser}` : 'Not provided'}
+              </span>
+            </div>
+
+            {leetcodeUser ? (
+              <>
+                <div className="grid grid-cols-4 gap-2 mb-3.5 text-center">
+                  <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
+                    <span className="text-[10px] text-slate-400 block">Total</span>
+                    <span className="text-sm font-bold text-white font-mono">{leetcodeData.total_solved || 0}</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
+                    <span className="text-[10px] text-emerald-400 block">Easy</span>
+                    <span className="text-sm font-bold text-emerald-400 font-mono">{leetcodeData.easy_solved || 0}</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
+                    <span className="text-[10px] text-amber-400 block">Med</span>
+                    <span className="text-sm font-bold text-amber-400 font-mono">{leetcodeData.medium_solved || 0}</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
+                    <span className="text-[10px] text-red-400 block">Hard</span>
+                    <span className="text-sm font-bold text-red-400 font-mono">{leetcodeData.hard_solved || 0}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between pb-1.5 border-b border-[#1F242D] text-slate-400">
+                    <span>Global Ranking</span>
+                    <span className="font-semibold text-slate-200 font-mono">
+                      {leetcodeData.global_ranking ? `#${leetcodeData.global_ranking.toLocaleString()}` : 'Top Tier'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pb-1.5 border-b border-[#1F242D] text-slate-400">
+                    <span>Contest Rating</span>
+                    <span className="font-semibold text-slate-200 font-mono">
+                      {leetcodeData.contest_rating ? `${leetcodeData.contest_rating} pts` : 'Unrated'}
+                    </span>
+                  </div>
+                  {leetcodeData.languages_solved && leetcodeData.languages_solved.length > 0 && (
+                    <div className="pt-1">
+                      <span className="text-slate-400 block mb-1 font-medium">Solved Problem Languages</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {leetcodeData.languages_solved.map((l, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#161A20] text-emerald-400 border border-emerald-500/20 font-mono">
+                            {l.language} ({l.problems_solved})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {leetcodeData.badges && leetcodeData.badges.length > 0 && (
+                    <div>
+                      <span className="text-slate-400 block mb-1 font-medium">Earned Badges</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {leetcodeData.badges.map((b, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#161A20] text-slate-200 border border-[#262C36]">
+                            ★ {b}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-6 text-center text-slate-500">
+                <span className="text-xs mb-1 text-slate-400">No LeetCode profile discovered in resume.</span>
+                <span className="text-[11px] text-slate-500">Problem-solving score dynamically normalized across GitHub and project evidence.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 1. TECHNICAL SKILLS BREAKDOWN (Independent Section) */}
+      <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 space-y-5">
+        <div className="flex items-center justify-between pb-3.5 border-b border-[#1F242D]">
+          <div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Technical Skills Breakdown
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Programming languages, frameworks, and developer tools verified against public GitHub code and LeetCode solved problems.
+            </p>
+          </div>
+          <span className="text-xs px-2.5 py-1 rounded-lg bg-[#161A20] font-bold text-slate-200 border border-[#262C36] font-mono">
+            {verifiedSkills.length} / {verifiedSkills.length + unverifiedSkills.length} Verified
+          </span>
+        </div>
+
+        <div>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">
+            Verified Technical Skills ({verifiedSkills.length})
+          </h4>
+          {verifiedSkills.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {verifiedSkills.map((skill, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
+                >
+                  <span className="font-bold text-emerald-400">✓</span>
+                  {skill}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic">No verified technical skills discovered in public code repositories.</p>
+          )}
+        </div>
+
+        <div className="pt-4 border-t border-[#1F242D]">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+            Unverified Technical Skills ({unverifiedSkills.length})
+          </h4>
+          {unverifiedSkills.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {unverifiedSkills.map((skill, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-400 bg-[#161A20] border border-[#262C36]"
+                >
+                  <span className="text-slate-600">•</span>
+                  {skill}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">All claimed technical skills were corroborated by repository code.</p>
+          )}
+        </div>
+      </div>
+
+      {/* 2. PROJECTS & CODEBASE EVIDENCE (Independent Section) */}
+      <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 space-y-5">
+        <div className="flex items-center justify-between pb-3.5 border-b border-[#1F242D]">
+          <div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Projects & Codebase Evidence
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Genuine software engineering projects cross-referenced with candidate's original GitHub repositories.
+            </p>
+          </div>
+          <span className="text-xs px-2.5 py-1 rounded-lg bg-[#161A20] font-bold text-slate-200 border border-[#262C36] font-mono">
+            {verifiedProjects.length} / {verifiedProjects.length + unverifiedProjects.length} Matched
+          </span>
+        </div>
+
+        <div>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">
+            Verified Projects ({verifiedProjects.length})
+          </h4>
+          {verifiedProjects.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {verifiedProjects.map((project, idx) => {
+                const pName = typeof project === 'string' ? project : project.name || 'Project';
+                const resumeProj = (resumeData?.projects || []).find(p => (p.name || '').toLowerCase() === pName.toLowerCase());
+                const desc = resumeProj?.description || 'Repository codebase match confirmed on GitHub';
+
+                return (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-xl bg-[#161A20] border border-[#262C36] flex flex-col justify-between text-xs space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-sm">{pName}</span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        ✓ Verified Codebase
+                      </span>
+                    </div>
+                    <p className="text-slate-400 text-[11px] leading-relaxed">{desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic">No project repositories verified on candidate GitHub.</p>
+          )}
+        </div>
+
+        {unverifiedProjects.length > 0 && (
+          <div className="pt-4 border-t border-[#1F242D]">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+              Unverified Projects ({unverifiedProjects.length})
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {unverifiedProjects.map((project, idx) => {
+                const pName = typeof project === 'string' ? project : project.name || 'Project';
+                const resumeProj = (resumeData?.projects || []).find(p => (p.name || '').toLowerCase() === pName.toLowerCase());
+                const desc = resumeProj?.description || 'No matching public repository discovered on GitHub';
+
+                return (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-xl bg-[#161A20]/60 border border-[#262C36] flex flex-col justify-between text-xs space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-300 text-sm">{pName}</span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-slate-500 bg-[#111418] border border-[#262C36]">
+                        • No Repo Discovered
+                      </span>
+                    </div>
+                    <p className="text-slate-500 text-[11px] leading-relaxed">{desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. SELF-REPORTED CANDIDATE SKILLS (Independent Section) */}
+      <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 space-y-4">
+        <div className="flex items-center justify-between pb-3.5 border-b border-[#1F242D]">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                Self-Reported Candidate Skills
+              </h3>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#161A20] text-slate-300 font-semibold border border-[#262C36]">
+                Not Scored Against Code Repos
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Interpersonal, leadership, and domain capabilities extracted for hiring context. These do not penalize the Reality Score.
+            </p>
+          </div>
+          <span className="text-xs px-2.5 py-1 rounded bg-[#161A20] text-slate-300 border border-[#262C36] font-mono">
+            {softSkills.length} Skills Listed
+          </span>
+        </div>
+
+        {softSkills.length > 0 ? (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {softSkills.map((skill, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-[#161A20] border border-[#262C36] shadow-subtle"
+              >
+                <span className="text-slate-500 font-bold">◆</span>
+                {skill}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500 italic py-1">No self-reported soft skills were listed on the resume.</p>
+        )}
+      </div>
+
+      {/* Automated Candidate Routing & Invitation */}
+      <SendInvitationModule scoreData={score} />
     </div>
   );
 }
