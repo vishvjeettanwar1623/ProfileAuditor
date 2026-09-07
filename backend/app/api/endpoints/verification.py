@@ -106,3 +106,108 @@ async def process_verification(
                 if isinstance(s, str) and s.strip():
                     technical_skills.append(s.strip())
                 elif isinstance(s, list):
+                    technical_skills.extend([sub.strip() for sub in s if isinstance(sub, str) and sub.strip()])
+        
+        soft_data = resume_data.get("soft_skills", [])
+        soft_skills = []
+        if isinstance(soft_data, list):
+            for s in soft_data:
+                if isinstance(s, str) and s.strip():
+                    soft_skills.append(s.strip())
+                elif isinstance(s, list):
+                    soft_skills.extend([sub.strip() for sub in s if isinstance(sub, str) and sub.strip()])
+
+        print(f"Technical skills to verify ({len(technical_skills)}): {technical_skills}")
+        print(f"Self-reported soft skills ({len(soft_skills)}): {soft_skills}")
+        
+        # Handle projects
+        projects_data = resume_data.get("projects", [])
+        projects = []
+        for project in projects_data:
+            if isinstance(project, dict) and "name" in project:
+                projects.append(project["name"])
+            elif isinstance(project, str) and project.strip():
+                projects.append(project.strip())
+        
+        # Fallback to handles in resume data if not passed in request
+        if not github_username:
+            github_username = resume_data.get("github_username")
+        if not leetcode_username:
+            leetcode_username = resume_data.get("leetcode_username")
+        
+        print(f"Final handles - GitHub: {github_username}, LeetCode: {leetcode_username}")
+        
+        github_results = {}
+        leetcode_results = {}
+        
+        # 2. Deep GitHub Verification
+        if github_username:
+            print(f"Starting Deep GitHub verification for: {github_username}")
+            try:
+                github_results = verify_github_claims(github_username, technical_skills, projects)
+            except Exception as e:
+                print(f"GitHub verification failed: {e}")
+                github_results = {"error": str(e)}
+        else:
+            print("No GitHub handle provided")
+
+        # 3. LeetCode GraphQL Verification (with language skill cross-referencing)
+        if leetcode_username:
+            print(f"Starting LeetCode verification for: {leetcode_username}")
+            try:
+                leetcode_results = verify_leetcode_claims(leetcode_username, claimed_skills=technical_skills)
+            except Exception as e:
+                print(f"LeetCode verification failed: {e}")
+                leetcode_results = {"error": str(e)}
+        else:
+            print("No LeetCode handle provided")
+
+        # 4. Compile verification results
+        verification_result = {
+            "resume_id": resume_id,
+            "status": "completed",
+            "github": github_results,
+            "leetcode": leetcode_results,
+            "verified_skills": [],
+            "unverified_skills": [],
+            "soft_skills": soft_skills,
+            "verified_projects": [],
+            "unverified_projects": []
+        }
+        
+        # Categorize verified and unverified technical skills against GitHub AND LeetCode proof
+        gh_verified_skills = set(github_results.get("verified_skills", []))
+        lc_verified_skills = set(leetcode_results.get("verified_skills", []))
+        all_verified_skills = gh_verified_skills.union(lc_verified_skills)
+
+        for skill in technical_skills:
+            if skill in all_verified_skills:
+                verification_result["verified_skills"].append(skill)
+                sources = []
+                if skill in gh_verified_skills:
+                    sources.append("GitHub")
+                if skill in lc_verified_skills:
+                    sources.append("LeetCode")
+                print(f"Technical skill '{skill}' verified via {', '.join(sources)}")
+            else:
+                verification_result["unverified_skills"].append(skill)
+                print(f"Technical skill '{skill}' NOT verified on GitHub or LeetCode")
+        
+        # Categorize verified and unverified projects against GitHub proof
+        gh_verified_projects = github_results.get("verified_projects", [])
+        for project in projects:
+            if project in gh_verified_projects:
+                verification_result["verified_projects"].append(project)
+                print(f"Project '{project}' verified on GitHub")
+            else:
+                verification_result["unverified_projects"].append(project)
+                print(f"Project '{project}' NOT verified on GitHub")
+        
+        verification_storage[resume_id] = verification_result
+        
+    except Exception as e:
+        verification_storage[resume_id] = {
+            "resume_id": resume_id,
+            "status": "error",
+            "error": str(e)
+        }
