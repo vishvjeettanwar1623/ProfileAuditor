@@ -6,8 +6,8 @@ function HomePage() {
     <div className="max-w-5xl mx-auto space-y-16 sm:space-y-20 pt-4 sm:pt-8">
       {/* Hero section */}
       <section className="text-center space-y-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#161A20] border border-[#262C36] text-xs font-medium text-slate-300">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#161A20] border border-[#262C36] text-xs font-medium text-slate-300">
+          <span className="w-2 h-2 rounded-sm bg-emerald-400"></span>
           <span>Automated Engineering Resume Auditing</span>
         </div>
 
