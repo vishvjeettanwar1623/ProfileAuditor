@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
+import WorkflowStepper from '../components/WorkflowStepper';
 
 const DEFAULT_SAMPLE_RESUME = `ALEX CHEN
 San Francisco, CA • alex.chen@email.com • (555) 019-2834
@@ -17,24 +18,24 @@ TECHNICAL SKILLS
 
 WORK EXPERIENCE
 Senior Full-Stack Engineer | ScaleTech Cloud
-Jan 2022 – Present | San Francisco, CA
+Jan 2022 - Present | San Francisco, CA
 • Architected distributed edge routing system handling 15M+ daily requests, reducing p99 latency by 38%.
 • Optimized PostgreSQL query performance and caching strategies with Redis, cutting database load by 45%.
 • Automated end-to-end CI/CD deployment pipelines using Docker and GitHub Actions across 12 microservices.
 • Led and mentored a squad of 6 engineers, driving 100% test coverage standards and weekly code reviews.
 
 Full-Stack Developer | InnovateLabs
-June 2019 – Dec 2021 | Austin, TX
+June 2019 - Dec 2021 | Austin, TX
 • Engineered responsive web applications with React and Next.js, improving mobile conversion rate by 24%.
 • Designed RESTful microservices in Node.js and Go for payment processing handling $4.5M in monthly transactions.
 • Spearheaded migration from legacy monolithic architecture to containerized services on AWS ECS.
 
 PROJECTS
-CloudMesh — High-Throughput Edge Routing Mesh
+CloudMesh - High-Throughput Edge Routing Mesh
 • Built an asynchronous traffic controller in Go and Docker featuring real-time telemetry and circuit breaking.
 • Deployed canary routing algorithms supporting 50k concurrent WebSocket connections with sub-10ms overhead.
 
-DataPulse — Real-Time Analytics Dashboard
+DataPulse - Real-Time Analytics Dashboard
 • Developed high-speed analytics platform using React, FastAPI, and PostgreSQL with live WebSocket feeds.
 • Integrated dynamic charting dashboards visualizing 500k telemetry events per minute.
 
@@ -56,8 +57,8 @@ const METRIC_SNIPPETS = [
 ];
 
 const SECTION_TEMPLATES = {
-  'WORK EXPERIENCE': '\n\nWORK EXPERIENCE\n[Role Title] | [Company Name]\n[Month Year] – [Month Year] | [Location]\n• [Action Verb] [Task/System], resulting in [Quantifiable Metric % or $].\n• [Action Verb] [Feature/Architecture], scaling to [Metric Count/Volume].',
-  'PROJECTS': '\n\nPROJECTS\n[Project Name] — [One-line summary]\n• Built [System/Application] using [Technologies], achieving [Performance Metric].\n• Implemented [Key Feature], supporting [Scale/Throughput].',
+  'WORK EXPERIENCE': '\n\nWORK EXPERIENCE\n[Role Title] | [Company Name]\n[Month Year] - [Month Year] | [Location]\n• [Action Verb] [Task/System], resulting in [Quantifiable Metric % or $].\n• [Action Verb] [Feature/Architecture], scaling to [Metric Count/Volume].',
+  'PROJECTS': '\n\nPROJECTS\n[Project Name] - [One-line summary]\n• Built [System/Application] using [Technologies], achieving [Performance Metric].\n• Implemented [Key Feature], supporting [Scale/Throughput].',
   'TECHNICAL SKILLS': '\n\nTECHNICAL SKILLS\n• Languages: [e.g. Python, Go, TypeScript, SQL]\n• Frameworks: [e.g. React, FastAPI, Docker, PostgreSQL]\n• Tools: [e.g. Git, Kubernetes, Redis, AWS]'
 };
 
@@ -110,8 +111,8 @@ const textToExactHtml = (rawText) => {
     }
 
     // Bullet point line
-    if (stripped.startsWith('•') || stripped.startsWith('-') || stripped.startsWith('*') || stripped.startsWith('–')) {
-      const bulletText = stripped.replace(/^[•\-*–—+]\s*/, '');
+    if (stripped.startsWith('•') || stripped.startsWith('-') || stripped.startsWith('*') || stripped.startsWith('+')) {
+      const bulletText = stripped.replace(/^[•\-*+]\s*/, '');
       blocks.push(`
         <div class="flex items-baseline text-xs text-slate-800 leading-relaxed mb-1 pl-3">
           <span class="mr-2 font-bold select-none text-slate-900">•</span>
@@ -122,7 +123,7 @@ const textToExactHtml = (rawText) => {
     }
 
     // Role / Project Row with dates / company
-    if (stripped.includes('|') || stripped.includes('—') || stripped.includes('–')) {
+    if (stripped.includes('|') || stripped.includes('-')) {
       blocks.push(`<div class="text-xs font-bold text-slate-900 mt-2 mb-0.5">${stripped}</div>`);
     } else {
       blocks.push(`<div class="text-xs text-slate-800 leading-relaxed mb-1">${stripped}</div>`);
@@ -134,13 +135,12 @@ const textToExactHtml = (rawText) => {
 
 function ResumeEditorPage() {
   const { resumeId } = useParams();
-  const navigate = useNavigate();
   
   const [resumeText, setResumeText] = useState(DEFAULT_SAMPLE_RESUME);
   const [resumeHtml, setResumeHtml] = useState(textToExactHtml(DEFAULT_SAMPLE_RESUME));
   const [activeDocumentName, setActiveDocumentName] = useState(resumeId ? `Audit Resume (AUD-${resumeId.slice(0, 8)})` : 'Alex Chen - Senior Full-Stack Engineer');
   const [documentType, setDocumentType] = useState('text'); // 'text', 'pdf', 'docx'
-  const [editorMode, setEditorMode] = useState('visual'); // 'visual' (A4 Sheet) or 'source' (Markdown/Text)
+  const [editorMode, setEditorMode] = useState('visual'); // 'visual' or 'source'
   const [fontFamily, setFontFamily] = useState('sans'); // 'sans', 'serif', 'mono'
   const [zoomLevel, setZoomLevel] = useState(100); // 75, 90, 100, 110, 125
   const [targetJd, setTargetJd] = useState('');
@@ -301,10 +301,6 @@ function ResumeEditorPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleAudit = () => {
-    navigate('/upload');
-  };
-
   const handleLoadSample = () => {
     setResumeText(DEFAULT_SAMPLE_RESUME);
     setResumeHtml(textToExactHtml(DEFAULT_SAMPLE_RESUME));
@@ -348,13 +344,16 @@ function ResumeEditorPage() {
         className="hidden"
       />
 
+      {/* Interactive Workflow Pipeline Navigation */}
+      <WorkflowStepper activeResumeId={resumeId} candidateName={activeDocumentName} />
+
       {/* Top Header Command Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#111418] p-5 rounded-xl border border-[#1F242D] shadow-card">
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-xl font-bold text-white tracking-tight">Exact-Layout Resume Document Editor</h1>
             <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold font-mono flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-sm ${loading ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
               <span>{loading ? 'Evaluating...' : 'Live Real-Time ATS'}</span>
             </span>
           </div>
@@ -380,7 +379,10 @@ function ResumeEditorPage() {
               </>
             ) : (
               <>
-                <span>📁 Upload PDF / Word</span>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span>Upload PDF / Word</span>
               </>
             )}
           </button>
@@ -390,29 +392,47 @@ function ResumeEditorPage() {
             disabled={exportingDocx}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-sm active:scale-[0.98] disabled:opacity-50"
           >
-            {exportingDocx ? 'Generating Word...' : '📥 Download Word (.docx)'}
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>{exportingDocx ? 'Generating Word...' : 'Download Word (.docx)'}</span>
           </button>
 
           <button
             onClick={() => window.print()}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-200 border border-[#262C36] transition-all"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-200 border border-[#262C36] transition-all"
           >
-            📄 Print / PDF
+            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            <span>Print / PDF</span>
           </button>
 
           <button
             onClick={handleCopy}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-200 border border-[#262C36] transition-all"
           >
-            {copied ? '✓ Copied' : 'Copy'}
+            {copied ? 'Copied' : 'Copy Text'}
           </button>
 
-          <button
-            onClick={handleAudit}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#161A20] hover:bg-[#1E232B] text-slate-200 border border-[#262C36] transition-all"
-          >
-            Audit Footprint
-          </button>
+          {resumeId ? (
+            <Link
+              to={`/results/${resumeId}`}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#161A20] hover:bg-[#1E232B] text-slate-200 border border-[#262C36] transition-all focus:ring-2 focus:ring-white focus:outline-none"
+            >
+              <span>View Footprint Audit</span>
+              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          ) : (
+            <Link
+              to="/upload"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#161A20] hover:bg-[#1E232B] text-slate-200 border border-[#262C36] transition-all focus:ring-2 focus:ring-white focus:outline-none"
+            >
+              <span>Audit a Resume</span>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -430,7 +450,7 @@ function ResumeEditorPage() {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              📄 Exact Resume View
+              Exact Resume View
             </button>
             <button
               type="button"
@@ -441,7 +461,7 @@ function ResumeEditorPage() {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              📝 Raw Text
+              Raw Text
             </button>
           </div>
 
@@ -461,14 +481,14 @@ function ResumeEditorPage() {
 
           {/* Canvas Zoom Controls */}
           <div className="flex items-center gap-1 bg-[#161A20] px-2 py-0.5 rounded-lg border border-[#262C36] text-slate-300">
-            <span className="text-[11px] text-slate-400 font-medium mr-1">🔍 Zoom:</span>
+            <span className="text-[11px] text-slate-400 font-medium mr-1">Zoom:</span>
             <button
               type="button"
               onClick={() => setZoomLevel(prev => Math.max(60, prev - 10))}
               className="px-1.5 py-0.5 rounded hover:bg-[#262C36] text-slate-300 hover:text-white font-bold"
               title="Zoom Out"
             >
-              −
+              -
             </button>
             <span className="text-[11px] font-mono px-1 min-w-[38px] text-center font-semibold text-white">
               {zoomLevel}%
@@ -497,7 +517,7 @@ function ResumeEditorPage() {
               type="button"
               className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-200 border border-[#262C36] transition-all flex items-center gap-1"
             >
-              <span>🚀 + Action Verb</span>
+              <span>+ Action Verb</span>
               <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
@@ -539,7 +559,7 @@ function ResumeEditorPage() {
             onClick={() => setShowJdInput(!showJdInput)}
             className="text-emerald-400 hover:text-emerald-300 font-medium underline underline-offset-2"
           >
-            {showJdInput ? 'Hide JD' : '🎯 Target JD'}
+            {showJdInput ? 'Hide JD' : 'Target Job Description'}
           </button>
           <span className="text-slate-600">•</span>
           <button
@@ -562,7 +582,7 @@ function ResumeEditorPage() {
       {uploadError && (
         <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs flex items-center justify-between">
           <span>{uploadError}</span>
-          <button onClick={() => setUploadError('')} className="text-red-400 hover:text-white font-bold ml-2">✕</button>
+          <button onClick={() => setUploadError('')} className="text-red-400 hover:text-white font-bold ml-2">Dismiss</button>
         </div>
       )}
 
@@ -695,13 +715,15 @@ function ResumeEditorPage() {
                   <span className="text-3xl font-bold text-white leading-none font-mono">
                     {atsScore}
                   </span>
-                  <span className="text-[10px] text-slate-500 mt-0.5 font-mono">/ 100</span>
+                  <span className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-mono">
+                    / 100
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* 4 Core Pillars Breakdown */}
-            <div className="grid grid-cols-2 gap-2 text-left pt-2 border-t border-[#1F242D]">
+            {/* Live Sub-Score Grid */}
+            <div className="grid grid-cols-2 gap-2 text-left pt-1">
               <div className="p-2.5 rounded-lg bg-[#161A20] border border-[#262C36]">
                 <span className="text-[10px] text-slate-400 block font-medium">Impact Metrics</span>
                 <span className="text-xs font-bold text-white font-mono">{Math.round(atsData.sub_scores?.impact_metrics || 0)}%</span>
@@ -736,7 +758,7 @@ function ResumeEditorPage() {
               <div className="flex flex-wrap gap-1 pt-1">
                 {atsData.action_verbs.map((v, i) => (
                   <span key={i} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 text-[10px] border border-emerald-500/20 font-mono">
-                    ✓ {v}
+                    {v}
                   </span>
                 ))}
               </div>
@@ -752,12 +774,12 @@ function ResumeEditorPage() {
                 <span className="font-bold text-emerald-400 uppercase tracking-wider text-[10px]">
                   Passed Checks ({atsData.passed_checks?.length || 0})
                 </span>
-                <span className="text-emerald-400 font-bold">✓</span>
+                <span className="text-[10px] font-semibold text-emerald-400 font-mono">PASSED</span>
               </div>
               <ul className="space-y-1.5 pt-2">
                 {atsData.passed_checks?.map((check, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-slate-300 text-[11px]">
-                    <span className="text-emerald-400 font-bold">✓</span>
+                    <span className="w-1.5 h-1.5 rounded-sm bg-emerald-400 mt-1.5 flex-shrink-0"></span>
                     <span>{check}</span>
                   </li>
                 ))}
@@ -770,12 +792,12 @@ function ResumeEditorPage() {
                   <span className="font-bold text-amber-400 uppercase tracking-wider text-[10px]">
                     Live Suggestions ({atsData.improvement_tips.length})
                   </span>
-                  <span className="text-amber-400 font-bold">💡</span>
+                  <span className="text-[10px] font-semibold text-amber-400 font-mono">TIPS</span>
                 </div>
                 <ul className="space-y-1.5 pt-2">
                   {atsData.improvement_tips.map((tip, idx) => (
                     <li key={idx} className="flex items-start gap-2 text-slate-300 text-[11px]">
-                      <span className="text-amber-400 font-bold">💡</span>
+                      <span className="w-1.5 h-1.5 rounded-sm bg-amber-400 mt-1.5 flex-shrink-0"></span>
                       <span>{tip}</span>
                     </li>
                   ))}
