@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
+import WorkflowStepper from '../components/WorkflowStepper';
 
 function ResultsPage() {
   const { resumeId } = useParams();
@@ -11,6 +12,12 @@ function ResultsPage() {
   const [score, setScore] = useState(null);
   const [verificationData, setVerificationData] = useState(null);
   const [resumeData, setResumeData] = useState(null);
+
+  useEffect(() => {
+    if (resumeId) {
+      sessionStorage.setItem('profileauditor_last_resume_id', resumeId);
+    }
+  }, [resumeId]);
 
   // Main linear audit pipeline
   useEffect(() => {
@@ -321,6 +328,9 @@ function ResultsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pt-2">
+      {/* Interactive Workflow Pipeline Navigation */}
+      <WorkflowStepper activeResumeId={resumeId} candidateName={candidateName} />
+
       {/* Candidate Header & Reality Score Card */}
       <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-[#1F242D]">
@@ -376,19 +386,22 @@ function ResultsPage() {
               </a>
             )}
             
+            <Link
+              to={`/editor/${resumeId}`}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-200 text-[#090A0C] transition-all shadow-sm active:scale-[0.98] focus:ring-2 focus:ring-white focus:outline-none"
+            >
+              <span>Live ATS Editor</span>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </Link>
+
             <button
               onClick={() => window.print()}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-300 border border-[#262C36] transition-all"
             >
               Print Report
             </button>
-
-            <Link
-              to="/upload"
-              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-200 text-[#090A0C] transition-all active:scale-[0.98] shadow-sm"
-            >
-              New Audit
-            </Link>
           </div>
         </div>
 
@@ -445,8 +458,8 @@ function ResultsPage() {
                   <span>GitHub Code Authenticity</span>
                   <span className="font-mono">{Math.round(breakdown.github_score || 0)}%</span>
                 </div>
-                <div className="w-full bg-[#1F242D] rounded-full h-2">
-                  <div className="h-2 rounded-full bg-white transition-all" style={{ width: `${Math.min(100, breakdown.github_score || 0)}%` }} />
+                <div className="w-full bg-[#1F242D] rounded-md h-2">
+                  <div className="h-2 rounded-md bg-white transition-all" style={{ width: `${Math.min(100, breakdown.github_score || 0)}%` }} />
                 </div>
               </div>
 
@@ -455,8 +468,8 @@ function ResultsPage() {
                   <span>Technical Skills Verification</span>
                   <span className="font-mono">{Math.round(breakdown.skills_score || 0)}%</span>
                 </div>
-                <div className="w-full bg-[#1F242D] rounded-full h-2">
-                  <div className="h-2 rounded-full bg-slate-300 transition-all" style={{ width: `${Math.min(100, breakdown.skills_score || 0)}%` }} />
+                <div className="w-full bg-[#1F242D] rounded-md h-2">
+                  <div className="h-2 rounded-md bg-slate-300 transition-all" style={{ width: `${Math.min(100, breakdown.skills_score || 0)}%` }} />
                 </div>
               </div>
 
@@ -465,8 +478,8 @@ function ResultsPage() {
                   <span>Projects Verification</span>
                   <span className="font-mono">{Math.round(breakdown.projects_score || 0)}%</span>
                 </div>
-                <div className="w-full bg-[#1F242D] rounded-full h-2">
-                  <div className="h-2 rounded-full bg-slate-300 transition-all" style={{ width: `${Math.min(100, breakdown.projects_score || 0)}%` }} />
+                <div className="w-full bg-[#1F242D] rounded-md h-2">
+                  <div className="h-2 rounded-md bg-slate-300 transition-all" style={{ width: `${Math.min(100, breakdown.projects_score || 0)}%` }} />
                 </div>
               </div>
 
@@ -475,8 +488,8 @@ function ResultsPage() {
                   <span>LeetCode Problem Solving</span>
                   <span className="font-mono">{Math.round(breakdown.leetcode_score || 0)}%</span>
                 </div>
-                <div className="w-full bg-[#1F242D] rounded-full h-2">
-                  <div className="h-2 rounded-full bg-slate-400 transition-all" style={{ width: `${Math.min(100, breakdown.leetcode_score || 0)}%` }} />
+                <div className="w-full bg-[#1F242D] rounded-md h-2">
+                  <div className="h-2 rounded-md bg-slate-400 transition-all" style={{ width: `${Math.min(100, breakdown.leetcode_score || 0)}%` }} />
                 </div>
               </div>
             </div>
@@ -508,7 +521,9 @@ function ResultsPage() {
 
           {/* Hiring Verdict Banner */}
           <div className="p-3.5 rounded-xl bg-[#161A20] border border-[#262C36] text-xs text-slate-300 leading-relaxed flex items-start gap-2.5">
-            <span className="text-emerald-400 font-bold text-sm">💡</span>
+            <svg className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             <span>{score.role_analysis.verdict_summary}</span>
           </div>
 
@@ -520,13 +535,13 @@ function ResultsPage() {
                 <span className="font-bold text-emerald-400 uppercase tracking-wider text-[10px]">
                   Verified in Code ({score.role_analysis.verified_requirements.length})
                 </span>
-                <span className="text-emerald-400 font-bold">✓</span>
+                <span className="text-[10px] font-semibold text-emerald-400 font-mono">MATCH</span>
               </div>
               {score.role_analysis.verified_requirements.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {score.role_analysis.verified_requirements.map((req, idx) => (
                     <span key={idx} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                      ✓ {req}
+                      {req}
                     </span>
                   ))}
                 </div>
@@ -541,13 +556,13 @@ function ResultsPage() {
                 <span className="font-bold text-amber-400 uppercase tracking-wider text-[10px]">
                   Claimed Unverified ({score.role_analysis.claimed_unverified_requirements.length})
                 </span>
-                <span className="text-amber-400 font-bold">•</span>
+                <span className="text-[10px] font-semibold text-amber-400 font-mono">PENDING</span>
               </div>
               {score.role_analysis.claimed_unverified_requirements.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {score.role_analysis.claimed_unverified_requirements.map((req, idx) => (
                     <span key={idx} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                      • {req}
+                      {req}
                     </span>
                   ))}
                 </div>
@@ -562,13 +577,13 @@ function ResultsPage() {
                 <span className="font-bold text-red-400 uppercase tracking-wider text-[10px]">
                   Missing from Resume ({score.role_analysis.missing_requirements.length})
                 </span>
-                <span className="text-red-400 font-bold">✗</span>
+                <span className="text-[10px] font-semibold text-red-400 font-mono">GAP</span>
               </div>
               {score.role_analysis.missing_requirements.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {score.role_analysis.missing_requirements.map((req, idx) => (
                     <span key={idx} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 text-red-300 border border-red-500/30">
-                      ✗ {req}
+                      {req}
                     </span>
                   ))}
                 </div>
@@ -601,11 +616,14 @@ function ResultsPage() {
             <div className="flex items-center gap-2">
               <Link
                 to={`/editor/${resumeId}`}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-white hover:bg-slate-200 text-[#090A0C] transition-all shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-200 text-[#090A0C] transition-all shadow-sm"
               >
-                <span>🚀 Optimize in Live Editor</span>
+                <span>Edit & Optimize in Live Editor</span>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
               </Link>
-              <span className="text-xs px-3 py-1 rounded-lg bg-[#161A20] font-bold text-white border border-[#262C36]">
+              <span className="text-xs px-3 py-1.5 rounded-lg bg-[#161A20] font-bold text-white border border-[#262C36]">
                 {score.ats_analysis.health_label}
               </span>
             </div>
@@ -643,12 +661,12 @@ function ResultsPage() {
                 <span className="font-bold text-emerald-400 uppercase tracking-wider text-[10px]">
                   ATS Passed Diagnostics ({score.ats_analysis.passed_checks?.length || 0})
                 </span>
-                <span className="text-emerald-400 font-bold">✓</span>
+                <span className="text-[10px] font-semibold text-emerald-400 font-mono">PASSED</span>
               </div>
               <ul className="space-y-1.5 pt-1">
                 {score.ats_analysis.passed_checks?.map((check, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-slate-300">
-                    <span className="text-emerald-400 font-bold mt-0.5">✓</span>
+                    <span className="w-1.5 h-1.5 rounded-sm bg-emerald-400 mt-1.5 flex-shrink-0"></span>
                     <span>{check}</span>
                   </li>
                 ))}
@@ -661,13 +679,13 @@ function ResultsPage() {
                 <span className="font-bold text-amber-400 uppercase tracking-wider text-[10px]">
                   Optimization Recommendations ({score.ats_analysis.improvement_tips?.length || 0})
                 </span>
-                <span className="text-amber-400 font-bold">💡</span>
+                <span className="text-[10px] font-semibold text-amber-400 font-mono">TIPS</span>
               </div>
               {score.ats_analysis.improvement_tips?.length > 0 ? (
                 <ul className="space-y-1.5 pt-1">
                   {score.ats_analysis.improvement_tips.map((tip, idx) => (
                     <li key={idx} className="flex items-start gap-2 text-slate-300">
-                      <span className="text-amber-400 font-bold mt-0.5">💡</span>
+                      <span className="w-1.5 h-1.5 rounded-sm bg-amber-400 mt-1.5 flex-shrink-0"></span>
                       <span>{tip}</span>
                     </li>
                   ))}
@@ -812,7 +830,7 @@ function ResultsPage() {
                       <div className="flex flex-wrap gap-1.5">
                         {leetcodeData.badges.map((b, idx) => (
                           <span key={idx} className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#161A20] text-slate-200 border border-[#262C36]">
-                            ★ {b}
+                            {b}
                           </span>
                         ))}
                       </div>
@@ -857,7 +875,7 @@ function ResultsPage() {
                   key={idx}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
                 >
-                  <span className="font-bold text-emerald-400">✓</span>
+                  <span className="w-1.5 h-1.5 rounded-sm bg-emerald-400 flex-shrink-0"></span>
                   {skill}
                 </span>
               ))}
@@ -878,7 +896,7 @@ function ResultsPage() {
                   key={idx}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-400 bg-[#161A20] border border-[#262C36]"
                 >
-                  <span className="text-slate-600">•</span>
+                  <span className="w-1.5 h-1.5 rounded-sm bg-slate-600 flex-shrink-0"></span>
                   {skill}
                 </span>
               ))}
@@ -923,8 +941,8 @@ function ResultsPage() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-white text-sm">{pName}</span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        ✓ Verified Codebase
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                        VERIFIED REPO
                       </span>
                     </div>
                     <p className="text-slate-400 text-[11px] leading-relaxed">{desc}</p>
@@ -955,8 +973,8 @@ function ResultsPage() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-slate-300 text-sm">{pName}</span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-slate-500 bg-[#111418] border border-[#262C36]">
-                        • No Repo Discovered
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] text-slate-500 bg-[#111418] border border-[#262C36] font-mono">
+                        NO REPO FOUND
                       </span>
                     </div>
                     <p className="text-slate-500 text-[11px] leading-relaxed">{desc}</p>
@@ -996,7 +1014,7 @@ function ResultsPage() {
                 key={idx}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-[#161A20] border border-[#262C36] shadow-subtle"
               >
-                <span className="text-slate-500 font-bold">◆</span>
+                <span className="w-1.5 h-1.5 rounded-sm bg-slate-500 flex-shrink-0"></span>
                 {skill}
               </span>
             ))}
@@ -1008,6 +1026,42 @@ function ResultsPage() {
 
       {/* Automated Candidate Routing & Invitation */}
       <SendInvitationModule scoreData={score} />
+
+      {/* Next Steps & Workflow Navigation Card */}
+      <div className="bg-[#111418] rounded-xl border border-[#1F242D] shadow-card p-6 sm:p-8 mt-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+              Next Recommended Step
+            </span>
+            <h3 className="text-base font-bold text-white">
+              Optimize & Export Candidate Resume in Live ATS Editor
+            </h3>
+            <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
+              Open the parsed resume text directly in the exact-layout editor to insert verified impact metrics, strengthen weak action verbs, and generate an ATS-formatted Microsoft Word (.docx) document.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
+            <Link
+              to={`/editor/${resumeId}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-200 text-[#090A0C] transition-all shadow-sm active:scale-[0.98] focus:ring-2 focus:ring-white focus:outline-none"
+            >
+              <span>Open in Live ATS Editor</span>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </Link>
+
+            <Link
+              to="/upload"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-medium bg-[#161A20] hover:bg-[#1E232B] text-slate-300 border border-[#262C36] transition-all focus:ring-2 focus:ring-white focus:outline-none"
+            >
+              Audit Another Resume
+            </Link>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
