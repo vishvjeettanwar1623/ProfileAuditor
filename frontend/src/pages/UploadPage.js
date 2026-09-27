@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
+import WorkflowStepper from '../components/WorkflowStepper';
 
 function UploadPage() {
   const [file, setFile] = useState(null);
+  const [consentGiven, setConsentGiven] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState('');
   const [error, setError] = useState('');
@@ -97,6 +99,7 @@ function UploadPage() {
       });
       
       const resumeId = response.data.resume_id;
+      sessionStorage.setItem('profileauditor_last_resume_id', resumeId);
 
       // Append query params if manual overrides exist
       const queryParams = new URLSearchParams();
@@ -125,9 +128,12 @@ function UploadPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8">
+    <div className="max-w-3xl mx-auto py-4 sm:py-6">
+      {/* Interactive Workflow Pipeline Navigation */}
+      <WorkflowStepper />
+
       {/* Header */}
-      <div className="mb-8 text-center space-y-2">
+      <div className="mb-6 text-center space-y-2">
         <h1 className="text-3xl font-extrabold text-white tracking-tight">Audit Developer Resume</h1>
         <p className="text-xs sm:text-sm text-slate-400">
           Upload a resume to verify claimed languages, audit GitHub code authenticity, and evaluate match against target job requirements.
@@ -279,6 +285,31 @@ function UploadPage() {
             )}
           </div>
 
+          {/* Form Consent Checkbox */}
+          <div className="pt-2 border-t border-[#1F242D]">
+            <label htmlFor="form-consent" className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                id="form-consent"
+                type="checkbox"
+                checked={consentGiven}
+                onChange={(e) => setConsentGiven(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded bg-[#161A20] border-[#262C36] text-white focus:ring-2 focus:ring-white focus:outline-none cursor-pointer"
+                aria-required="true"
+              />
+              <span className="text-xs text-slate-400 leading-relaxed">
+                I confirm that I have the right to process this resume and agree to the{' '}
+                <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-white underline hover:text-slate-200 font-medium">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-white underline hover:text-slate-200 font-medium">
+                  Privacy Policy
+                </Link>
+                . No unauthorized data scraping or cross-site tracking is performed.
+              </span>
+            </label>
+          </div>
+
           {/* Error notice */}
           {error && (
             <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-800/60 text-red-300 text-xs flex items-start gap-2">
@@ -291,7 +322,7 @@ function UploadPage() {
           <div>
             <button
               type="submit"
-              disabled={loading || !file}
+              disabled={loading || !file || !consentGiven}
               className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-xs font-semibold text-[#090A0C] bg-white hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-[0.99] shadow-sm"
             >
               {loading ? (
