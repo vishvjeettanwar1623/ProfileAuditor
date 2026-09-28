@@ -1,0 +1,48 @@
+{
+  "nodes": [
+    {
+      "id": "use-case",
+      "type": "text",
+      "text": "# ProfileAuditor Use Case Diagram\n\n```mermaid\nflowchart LR\n    recruiter[Recruiter / Hiring Manager]\n    candidate[Candidate]\n    github[GitHub API]\n    leetcode[LeetCode API]\n    email[Email Provider]\n\n    subgraph system[ProfileAuditor System]\n        upload((Upload resume))\n        parse((Parse resume))\n        edit((Edit resume and inspect ATS health))\n        verify((Verify technical claims))\n        score((Calculate Reality Score))\n        view((View audit results))\n        invite((Send interview invitation))\n        export((Export edited resume))\n    end\n\n    recruiter --> upload\n    recruiter --> edit\n    recruiter --> view\n    recruiter --> invite\n    candidate --> upload\n    candidate --> edit\n    upload -. includes .-> parse\n    view --> verify\n    verify --> github\n    verify --> leetcode\n    verify -. enables .-> score\n    score -. updates .-> view\n    edit --> export\n    invite --> email\n```",
+      "x": 0,
+      "y": 0,
+      "width": 760,
+      "height": 650,
+      "color": "#3b82f6"
+    },
+    {
+      "id": "class",
+      "type": "text",
+      "text": "# ProfileAuditor Class Diagram\n\n```mermaid\nclassDiagram\n    class ResumeData {\n        +str resume_id\n        +str name\n        +str email\n        +List technical_skills\n        +List soft_skills\n        +List projects\n        +str github_username\n        +str leetcode_username\n        +str status\n    }\n    class VerificationResult {\n        +str resume_id\n        +str status\n        +dict github\n        +dict leetcode\n        +List verified_skills\n        +List unverified_skills\n        +List verified_projects\n        +List unverified_projects\n    }\n    class ScoreResponse {\n        +str resume_id\n        +float score\n        +ScoreBreakdown breakdown\n        +float job_fit_score\n        +float ats_score\n    }\n    class ScoreBreakdown {\n        +float github_score\n        +float leetcode_score\n        +float skills_score\n        +float projects_score\n    }\n    class ResumeParser {\n        +parse_resume(file_path) dict\n        +extract_text_from_file(file_path) str\n    }\n    class GitHubService {\n        +verify_github_claims(username, skills, projects) dict\n    }\n    class LeetCodeService {\n        +verify_leetcode_claims(username, claimed_skills) dict\n    }\n    class ScoringService {\n        +calculate_reality_score(evidence) tuple\n    }\n\n    ResumeParser ..> ResumeData : creates\n    VerificationResult ..> ResumeData : reads\n    VerificationResult ..> GitHubService : calls\n    VerificationResult ..> LeetCodeService : calls\n    ScoreResponse ..> VerificationResult : reads\n    ScoreResponse ..> ScoringService : uses\n    ScoreResponse *-- ScoreBreakdown\n```",
+      "x": 820,
+      "y": 0,
+      "width": 900,
+      "height": 760,
+      "color": "#8b5cf6"
+    },
+    {
+      "id": "activity",
+      "type": "text",
+      "text": "# ProfileAuditor Activity Diagram\n\n```mermaid\nflowchart TD\n    start([Start]) --> choose{Choose workflow}\n    choose -->|Audit candidate| select[Select PDF or DOCX resume]\n    select --> valid{File type valid?}\n    valid -->|No| error[Show upload error]\n    error --> stop([End])\n    valid -->|Yes| save[Save file and create resume ID]\n    save --> parse[Extract text and parse candidate data]\n    parse --> completed[Store completed resume]\n    completed --> handles[Read GitHub and LeetCode handles]\n    handles --> verify[Verify public technical evidence]\n    verify --> merge[Merge verified and unverified claims]\n    merge --> score[Calculate Reality Score and ATS health]\n    score --> results[Display results dashboard]\n    results --> invite{Invite candidate?}\n    invite -->|Yes| email[Queue interview email]\n    invite -->|No| stop\n    email --> stop\n    choose -->|Improve resume| editor[Open resume editor]\n    editor --> ats[Evaluate live ATS health and role fit]\n    ats --> export{Export DOCX?}\n    export -->|Yes| docx[Generate downloadable DOCX]\n    export -->|No| stop\n    docx --> stop\n```",
+      "x": 0,
+      "y": 760,
+      "width": 820,
+      "height": 800,
+      "color": "#10b981"
+    },
+    {
+      "id": "sequence",
+      "type": "text",
+      "text": "# ProfileAuditor Sequence Diagram\n\n```mermaid\nsequenceDiagram\n    actor Recruiter\n    participant UI as React ResultsPage\n    participant Resume as Resume API\n    participant Parser as ResumeParser\n    participant Verify as Verification API\n    participant GitHub as GitHub service\n    participant LeetCode as LeetCode service\n    participant Score as Score API\n    participant Email as Email service\n\n    Recruiter->>UI: Upload PDF/DOCX\n    UI->>Resume: POST /api/resume/upload\n    Resume->>Parser: parse_resume(file_path)\n    Parser-->>Resume: ResumeData\n    Resume-->>UI: ResumeResponse\n    UI->>Verify: POST /api/verification/{resume_id}\n    Verify->>GitHub: Verify claims\n    GitHub-->>Verify: GitHub evidence\n    Verify->>LeetCode: Verify skills\n    LeetCode-->>Verify: LeetCode evidence\n    Verify-->>UI: VerificationResult\n    UI->>Score: GET /api/score/{resume_id}\n    Score->>Score: Calculate score, role fit, and ATS health\n    Score-->>UI: ScoreResponse\n    UI-->>Recruiter: Render audit results\n    opt Send invitation\n        Recruiter->>UI: Submit invitation\n        UI->>Email: Queue interview email\n        Email-->>Recruiter: Delivery handled asynchronously\n    end\n```",
+      "x": 900,
+      "y": 900,
+      "width": 1000,
+      "height": 800,
+      "color": "#f59e0b"
+    }
+  ],
+  "edges": [],
+  "metadata": {
+    "version": "1"
+  }
+}
