@@ -66,3 +66,71 @@ def evaluate_ats_health(raw_text: str, parsed_resume: Dict[str, Any]) -> Dict[st
         "Projects Section": bool(parsed_resume.get("projects")),
         "Education Section": bool(parsed_resume.get("education") or "education" in text_lower or "university" in text_lower or "degree" in text_lower),
         "Developer Profiles": bool(parsed_resume.get("github_username") or parsed_resume.get("leetcode_username")),
+    }
+    
+    passed_sections = sum(1 for v in structure_checks.values() if v)
+    structure_score = round((passed_sections / len(structure_checks)) * 25.0, 1)
+
+    # 4. Length & Formatting Health (Weight 20%)
+    word_count = len(text.split())
+    if 300 <= word_count <= 950:
+        length_score = 20.0
+    elif 200 <= word_count < 300 or 950 < word_count <= 1300:
+        length_score = 14.0
+    else:
+        length_score = 8.0
+
+    total_ats_score = min(100.0, round(metric_score + verb_score + structure_score + length_score, 1))
+
+    # Passed checks & Improvement tips
+    passed_checks = []
+    improvement_tips = []
+
+    if metric_count >= 3:
+        passed_checks.append(f"Includes strong quantifiable impact metrics ({metric_count} measurable achievements detected)")
+    else:
+        improvement_tips.append("Add more measurable impact metrics (%, scale, latency reduction, user growth) to experience bullet points")
+
+    if verb_count >= 4:
+        passed_checks.append(f"Uses strong technical action verbs ({len(verbs_found)} distinct verbs: {', '.join(list(verbs_found)[:4])})")
+    else:
+        improvement_tips.append("Begin bullet points with active engineering verbs (e.g. 'Architected', 'Optimized', 'Automated')")
+
+    if passed_sections == len(structure_checks):
+        passed_checks.append("All standard ATS sections present and structured cleanly")
+    else:
+        missing_secs = [k for k, v in structure_checks.items() if not v]
+        improvement_tips.append(f"Ensure explicit section headers for: {', '.join(missing_secs)}")
+
+    if 300 <= word_count <= 950:
+        passed_checks.append(f"Optimal resume length ({word_count} words - ideal for single/two-page ATS parsing)")
+    else:
+        improvement_tips.append(f"Resume length is {word_count} words. Aim for 350-850 words for optimal recruiter readability")
+
+    if parsed_resume.get("github_username") or parsed_resume.get("leetcode_username"):
+        passed_checks.append("Includes discoverable public engineering footprints (GitHub/LeetCode)")
+
+    # Rating label
+    if total_ats_score >= 80:
+        health_label = "Optimal ATS Health"
+    elif total_ats_score >= 60:
+        health_label = "Good ATS Health"
+    else:
+        health_label = "Needs Optimization"
+
+    return {
+        "ats_score": total_ats_score,
+        "health_label": health_label,
+        "word_count": word_count,
+        "metric_count": metric_count,
+        "action_verbs_count": verb_count,
+        "action_verbs": sorted(list(verbs_found)),
+        "sub_scores": {
+            "impact_metrics": round((metric_score / 30.0) * 100, 1),
+            "action_verbs": round((verb_score / 25.0) * 100, 1),
+            "structure_completeness": round((structure_score / 25.0) * 100, 1),
+            "formatting_health": round((length_score / 20.0) * 100, 1),
+        },
+        "passed_checks": passed_checks,
+        "improvement_tips": improvement_tips
+    }
